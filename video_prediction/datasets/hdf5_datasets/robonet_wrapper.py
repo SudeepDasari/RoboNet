@@ -20,9 +20,19 @@ def _slice_helper(tensor, start_i, N, axis):
 
     return tf.slice(tensor, starts, ends)
 
+
+def _grab_cam(image_tensor, selected_cams):
+    b_dim = image_tensor.get_shape().as_list()[0]
+    tensors = []
+    for b in range(b_dim):
+        tensors.append(image_tensor[b, :, selected_cams[b]][None])
+    return tf.concat(tensors, axis=0)
+
+
 class RoboNetVideoDataset:
     # maybe fix the inheritance here more later?
     def __init__(self, files, config_path, batch_size):
+        self._batch_size = batch_size
         self._n_files = len(files)
         assert os.path.exists(config_path) and os.path.isfile(config_path), 'dataset params path incorrect!'
         self._config = {}
@@ -64,17 +74,18 @@ class RoboNetVideoDataset:
 
         if self._rand_cam is None:
             n_cam =  self._dataset['images', mode].get_shape().as_list()[2]
-            self._rand_cam = tf.random_uniform((), maxval=n_cam, dtype=tf.int32)
+            self._rand_cam = tf.random_uniform((self._batch_size,), maxval=n_cam, dtype=tf.int32)
         
         inputs = OrderedDict()
-        img_slice =  _slice_helper(self._dataset['images', mode], self._rand_start, n_frames, 1)[:, :, self._rand_cam]
+        img_slice =  _grab_cam(_slice_helper(self._dataset['images', mode], self._rand_start, n_frames, 1), self._rand_cam)
+        
         inputs['images'] = tf.cast(img_slice / 255.0, img_dtype)
         if self._use_states:
             inputs['states'] = _slice_helper(self._dataset['states', mode], self._rand_start, n_frames, 1)
         inputs['actions'] = _slice_helper(self._dataset['actions', mode], self._rand_start, n_frames-1, 1)
         
-        targets = _slice_helper(self._dataset['images', mode], self._rand_start + n_context, n_frames - n_context, 1)[:, :, self._rand_cam]
-        targets = tf.cast(img_slice / 255.0, img_dtype)
+        targets = _grab_cam(_slice_helper(self._dataset['images', mode], self._rand_start + n_context, n_frames - n_context, 1), self._rand_cam)
+        targets = tf.cast(targets / 255.0, img_dtype)
         return inputs, targets
     
     @property
