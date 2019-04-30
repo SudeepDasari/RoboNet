@@ -2,6 +2,7 @@ try:
     from visual_mpc.datasets import RoboNetDataset
 except:
     print('did you install visual_foresight repo?')
+    raise ValueError
 import json
 import os
 import random
@@ -55,7 +56,7 @@ class RoboNetVideoDataset:
     def __get__(key, mode='train'):
         return self._dataset[key, mode]
 
-    def make_input_targets(self, n_frames, n_context, mode):
+    def make_input_targets(self, n_frames, n_context, mode, img_dtype=tf.float32):
         assert n_frames > 0
         if self._rand_start is None:
             img_T = self._dataset['images', mode].get_shape().as_list()[1]
@@ -66,12 +67,14 @@ class RoboNetVideoDataset:
             self._rand_cam = tf.random_uniform((), maxval=n_cam, dtype=tf.int32)
         
         inputs = OrderedDict()
-        inputs['images'] = _slice_helper(self._dataset['images', mode], self._rand_start, n_frames, 1)[:, :, self._rand_cam]
+        img_slice =  _slice_helper(self._dataset['images', mode], self._rand_start, n_frames, 1)[:, :, self._rand_cam]
+        inputs['images'] = tf.cast(img_slice / 255.0, img_dtype)
         if self._use_states:
             inputs['states'] = _slice_helper(self._dataset['states', mode], self._rand_start, n_frames, 1)
         inputs['actions'] = _slice_helper(self._dataset['actions', mode], self._rand_start, n_frames-1, 1)
         
         targets = _slice_helper(self._dataset['images', mode], self._rand_start + n_context, n_frames - n_context, 1)[:, :, self._rand_cam]
+        targets = tf.cast(img_slice / 255.0, img_dtype)
         return inputs, targets
     
     @property
