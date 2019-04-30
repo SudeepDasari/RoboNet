@@ -271,18 +271,32 @@ def plot_summary(name, x, y, display_name=None, description=None, collections=No
     num_thresholds = y.shape[0].value
     if num_thresholds is None:
         raise ValueError('Size of y needs to be statically defined for num_thresholds argument')
-    summary = summary_lib.pr_curve_raw_data_op(
-        name,
-        true_positive_counts=tf.ones(num_thresholds),
-        false_positive_counts=tf.ones(num_thresholds),
-        true_negative_counts=tf.ones(num_thresholds),
-        false_negative_counts=tf.ones(num_thresholds),
-        precision=y[::-1],
-        recall=x[::-1],
-        num_thresholds=num_thresholds,
-        display_name=display_name,
-        description=description,
-        collections=collections)
+    try:
+        summary = summary_lib.pr_curve_raw_data(
+            name,
+            true_positive_counts=tf.ones(num_thresholds),
+            false_positive_counts=tf.ones(num_thresholds),
+            true_negative_counts=tf.ones(num_thresholds),
+            false_negative_counts=tf.ones(num_thresholds),
+            precision=y[::-1],
+            recall=x[::-1],
+            num_thresholds=num_thresholds,
+            display_name=display_name,
+            description=description,
+            collections=collections)
+    except AttributeError:
+        summary = summary_lib.pr_curve_raw_data_op(
+            name,
+            true_positive_counts=tf.ones(num_thresholds),
+            false_positive_counts=tf.ones(num_thresholds),
+            true_negative_counts=tf.ones(num_thresholds),
+            false_negative_counts=tf.ones(num_thresholds),
+            precision=y[::-1],
+            recall=x[::-1],
+            num_thresholds=num_thresholds,
+            display_name=display_name,
+            description=description,
+            collections=collections)
     return summary
 
 

@@ -11,8 +11,8 @@ from video_prediction.ops import lrelu, dense, pad2d, conv2d, conv_pool2d, flatt
 from video_prediction.rnn_ops import BasicConv2DLSTMCell, Conv2DGRUCell
 from video_prediction.utils import tf_utils
 
-# Amount to use when lower bounding tensors
-RELU_SHIFT = 1e-12
+# Amount to use when lower bounding tensors  (1e-7 to avoid floating point instabliity)
+RELU_SHIFT = 1e-7
 
 
 def create_legacy_encoder(inputs,
@@ -687,7 +687,6 @@ class SAVPVideoPredictionModel(VideoPredictionModel):
         if self.hparams.d_net == 'none':
             self.discriminator_fn = None
         self.deterministic = not self.hparams.nz
-        print(self.hparams.context_frames)
 
     def get_default_hparams_dict(self):
         default_hparams = super(SAVPVideoPredictionModel, self).get_default_hparams_dict()
