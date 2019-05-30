@@ -12,7 +12,7 @@ from tensorflow.python.framework import device as pydev
 from tensorflow.python.training import device_setter
 from tensorflow.python.util import nest
 
-from video_prediction.utils import ffmpeg_gif
+from robonet.video_prediction.utils import ffmpeg_gif
 
 IMAGE_SUMMARIES = "image_summaries"
 EVAL_SUMMARIES = "eval_summaries"

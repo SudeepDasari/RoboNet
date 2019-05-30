@@ -3,11 +3,11 @@ import itertools
 import tensorflow as tf
 from tensorflow.python.util import nest
 
-from video_prediction import ops
-from video_prediction.models import VideoPredictionModel
-from video_prediction.ops import conv3d
-from video_prediction.ops import lrelu, conv2d, flatten, tile_concat, pool2d, deconv2d
-from video_prediction.utils import tf_utils
+from robonet.video_prediction import ops
+from robonet.video_prediction.models import VideoPredictionModel
+from robonet.video_prediction.ops import conv3d
+from robonet.video_prediction.ops import lrelu, conv2d, flatten, tile_concat, pool2d, deconv2d
+from robonet.video_prediction.utils import tf_utils
 
 
 def noise(x, use_noise, sigma=0.2):

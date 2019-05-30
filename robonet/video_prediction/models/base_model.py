@@ -7,12 +7,12 @@ import tensorflow as tf
 from tensorflow.contrib.training import HParams
 from tensorflow.python.util import nest
 
-import video_prediction as vp
-import video_prediction.utils.tf_utils
-from video_prediction.functional_ops import foldl
-from video_prediction.ops import pool2d
-from video_prediction.utils import tf_utils
-from video_prediction.utils.tf_utils import compute_averaged_gradients, reduce_tensors, local_device_setter, \
+import robonet.video_prediction as vp
+import robonet.video_prediction.utils.tf_utils
+from robonet.video_prediction.functional_ops import foldl
+from robonet.video_prediction.ops import pool2d
+from robonet.video_prediction.utils import tf_utils
+from robonet.video_prediction.utils.tf_utils import compute_averaged_gradients, reduce_tensors, local_device_setter, \
     replace_read_ops, print_loss_info, transpose_batch_time, add_tensor_summaries, add_scalar_summaries, \
     add_plot_summaries, add_summaries
 from . import vgg_network
@@ -159,7 +159,7 @@ class BaseVideoPredictionModel(object):
                 return transpose_batch_time(tf.where(cond, transpose_batch_time(x), transpose_batch_time(y)))
 
             with tf.variable_scope('vgg', reuse=tf.AUTO_REUSE):
-                _, target_vgg_features = video_prediction.utils.tf_utils.with_flat_batch(vgg_network.vgg16)(targets)
+                _, target_vgg_features = robonet.video_prediction.utils.tf_utils.with_flat_batch(vgg_network.vgg16)(targets)
 
             def sort_criterion(x):
                 return tf.reduce_mean(x, axis=0)
@@ -168,7 +168,7 @@ class BaseVideoPredictionModel(object):
                 with tf.variable_scope(self.generator_scope, reuse=True):
                     gen_images, _ = self.generator_fn(inputs)
                 with tf.variable_scope('vgg', reuse=tf.AUTO_REUSE):
-                    _, gen_vgg_features = video_prediction.utils.tf_utils.with_flat_batch(vgg_network.vgg16)(gen_images)
+                    _, gen_vgg_features = robonet.video_prediction.utils.tf_utils.with_flat_batch(vgg_network.vgg16)(gen_images)
                 for name, metric_fn in metric_fns:
                     if name in ('vgg_csim', 'vgg_cdist'):
                         metric_fn = {'vgg_csim': vp.metrics.cosine_similarity, 'vgg_cdist': vp.metrics.cosine_distance}[name]

@@ -24,7 +24,7 @@ from tensorflow.contrib.layers.python import layers as tf_layers
 from tensorflow.contrib.slim import add_arg_scope
 from tensorflow.contrib.slim import layers
 
-from video_prediction.models import VideoPredictionModel
+from robonet.video_prediction.models import VideoPredictionModel
 
 
 # Amount to use when lower bounding tensors

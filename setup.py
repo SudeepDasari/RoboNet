@@ -2,7 +2,7 @@
 from setuptools import setup
 
 setup(
-    name='robonet_video_prediction',
+    name='RoboNet',
     version='0.1.0',
-    packages=['video_prediction'],
+    packages=['robonet'],
 )

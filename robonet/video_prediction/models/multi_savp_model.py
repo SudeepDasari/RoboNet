@@ -3,14 +3,14 @@ import itertools
 import numpy as np
 import tensorflow as tf
 
-import video_prediction as vp
-from video_prediction import ops
-from video_prediction.models import VideoPredictionModel, SAVPVideoPredictionModel
+import robonet.video_prediction as vp
+from robonet.video_prediction import ops
+from robonet.video_prediction.models import VideoPredictionModel, SAVPVideoPredictionModel
 from video_prediction.models import pix2pix_model, mocogan_model, spectral_norm_model
-from video_prediction.models.savp_model import create_encoder, apply_kernels, apply_flows, identity_kernel
-from video_prediction.ops import dense, conv2d, flatten, tile_concat
-from video_prediction.rnn_ops import BasicConv2DLSTMCell, Conv2DGRUCell
-from video_prediction.utils import tf_utils
+from robonet.video_prediction.models.savp_model import create_encoder, apply_kernels, apply_flows, identity_kernel
+from robonet.video_prediction.ops import dense, conv2d, flatten, tile_concat
+from robonet.video_prediction.rnn_ops import BasicConv2DLSTMCell, Conv2DGRUCell
+from robonet.video_prediction.utils import tf_utils
 
 # Amount to use when lower bounding tensors
 RELU_SHIFT = 1e-12

@@ -2,8 +2,8 @@ import numpy as np
 import tensorflow as tf
 from scipy import signal
 
-from video_prediction.models import vgg_network
-from video_prediction.utils.tf_utils import PersistentOpEvaluator, with_flat_batch
+from robonet.video_prediction.models import vgg_network
+from robonet.video_prediction.utils.tf_utils import PersistentOpEvaluator, with_flat_batch
 
 
 def _axis(keep_axis, ndims):

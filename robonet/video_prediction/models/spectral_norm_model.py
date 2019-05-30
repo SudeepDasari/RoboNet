@@ -1,8 +1,8 @@
 import tensorflow as tf
 
-from video_prediction import ops
-from video_prediction.ops import dense, lrelu, flatten
-from video_prediction.utils import tf_utils
+from robonet.video_prediction import ops
+from robonet.video_prediction.ops import dense, lrelu, flatten
+from robonet.video_prediction.utils import tf_utils
 
 
 def create_image_sn_discriminator(images,

@@ -2,8 +2,8 @@ import itertools
 
 import tensorflow as tf
 
-from video_prediction.models import SAVPVideoPredictionModel
-from video_prediction.utils import tf_utils
+from robonet.video_prediction.models import SAVPVideoPredictionModel
+from robonet.video_prediction.utils import tf_utils
 from . import vgg_network
 import pdb
 

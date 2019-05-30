@@ -5,10 +5,10 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.python.util import nest
 
-from video_prediction import ops
-from video_prediction.models import VideoPredictionModel
-from video_prediction.ops import conv2d, lrelu, flatten
-from video_prediction.utils import tf_utils
+from robonet.video_prediction import ops
+from robonet.video_prediction.models import VideoPredictionModel
+from robonet.video_prediction.ops import conv2d, lrelu, flatten
+from robonet.video_prediction.utils import tf_utils
 
 
 def create_generator(generator_inputs,

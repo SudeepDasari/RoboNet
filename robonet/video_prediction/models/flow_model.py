@@ -2,12 +2,12 @@ import itertools
 
 import tensorflow as tf
 
-from video_prediction import ops, flow_ops
-from video_prediction.models import VideoPredictionModel
-from video_prediction.models.savp_model import encoder_fn, discriminator_fn
-from video_prediction.ops import dense, conv2d, upsample_conv2d, conv_pool2d, flatten, tile_concat
-from video_prediction.rnn_ops import BasicConv2DLSTMCell, Conv2DGRUCell
-from video_prediction.utils import tf_utils
+from robonet.video_prediction import ops, flow_ops
+from robonet.video_prediction.models import VideoPredictionModel
+from robonet.video_prediction.models.savp_model import encoder_fn, discriminator_fn
+from robonet.video_prediction.ops import dense, conv2d, upsample_conv2d, conv_pool2d, flatten, tile_concat
+from robonet.video_prediction.rnn_ops import BasicConv2DLSTMCell, Conv2DGRUCell
+from robonet.video_prediction.utils import tf_utils
 
 
 class FlowCell(tf.nn.rnn_cell.RNNCell):

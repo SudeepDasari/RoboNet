@@ -3,12 +3,12 @@ import itertools
 import numpy as np
 import tensorflow as tf
 
-from video_prediction import ops, flow_ops
-from video_prediction.models.savp_model import apply_kernels, identity_kernel
-from video_prediction.ops import conv2d, tile_concat, flatten
-from video_prediction.ops import dense, upsample_conv2d, conv_pool2d
-from video_prediction.rnn_ops import BasicConv2DLSTMCell, Conv2DGRUCell
-from video_prediction.utils import tf_utils
+from robonet.video_prediction import ops, flow_ops
+from robonet.video_prediction.models.savp_model import apply_kernels, identity_kernel
+from robonet.video_prediction.ops import conv2d, tile_concat, flatten
+from robonet.video_prediction.ops import dense, upsample_conv2d, conv_pool2d
+from robonet.video_prediction.rnn_ops import BasicConv2DLSTMCell, Conv2DGRUCell
+from robonet.video_prediction.utils import tf_utils
 from . import pspnet_network
 from .base_model import VideoPredictionModel
 

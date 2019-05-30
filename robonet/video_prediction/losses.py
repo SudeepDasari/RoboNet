@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-from video_prediction.ops import sigmoid_kl_with_logits
+from robonet.video_prediction.ops import sigmoid_kl_with_logits
 
 
 def l1_loss(pred, target):

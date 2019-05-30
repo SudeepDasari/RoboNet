@@ -4,12 +4,12 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.python.util import nest
 
-from video_prediction import ops, flow_ops
-from video_prediction.models import VideoPredictionModel
-from video_prediction.models import pix2pix_model, mocogan_model, spectral_norm_model
-from video_prediction.ops import lrelu, dense, pad2d, conv2d, conv_pool2d, flatten, tile_concat, pool2d
-from video_prediction.rnn_ops import BasicConv2DLSTMCell, Conv2DGRUCell
-from video_prediction.utils import tf_utils
+from robonet.video_prediction import ops, flow_ops
+from robonet.video_prediction.models import VideoPredictionModel
+from robonet.video_prediction.models import pix2pix_model, mocogan_model, spectral_norm_model
+from robonet.video_prediction.ops import lrelu, dense, pad2d, conv2d, conv_pool2d, flatten, tile_concat, pool2d
+from robonet.video_prediction.rnn_ops import BasicConv2DLSTMCell, Conv2DGRUCell
+from robonet.video_prediction.utils import tf_utils
 
 # Amount to use when lower bounding tensors  (1e-7 to avoid floating point instabliity)
 RELU_SHIFT = 1e-7
