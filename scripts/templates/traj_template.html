@@ -1,0 +1,49 @@
+<html>
+    <head>
+        <style>
+                table, th, td {
+                    border: 1px solid black;
+                    border-collapse: collapse;
+                }
+                th, td {
+                    padding: 5px;
+                }
+        </style>
+        <title>Trajectory Viewer</title>
+    </head>
+
+    <body>
+        <h1>RoboNet Trajectory {{ traj_name }} </h1>
+
+        <h2> Meta-Data </h2>
+        <table>
+        {% for attr in attributes %}
+            <tr>
+                <th>{{ attr.name }}</th>
+                <td>{{ attr.value }}</td>
+            </tr>
+        {% endfor %}
+        </table>
+        <br> <br>
+
+        <h2> Videos </h2>
+        <table>
+        <tr>    
+            {% for name in video_names %}
+                <th> {{ name }} </th>
+            {% endfor %}
+        </tr>
+
+        <tr>    
+            {% for video in videos %}
+                <td>
+                    <video controls autoplay>
+                        <source src="{{ video.url }}" type="{{ video.type }}" />
+                    </video>
+                </td>
+            {% endfor %}
+        </tr>
+        </table>
+
+    </body>
+</html>
