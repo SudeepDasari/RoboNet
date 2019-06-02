@@ -17,7 +17,8 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.python.util import nest
 
-from robonet.video_prediction import datasets, models
+from robonet.video_prediction import  models
+import robonet.dataset as datasets
 from robonet.video_prediction.utils import ffmpeg_gif, tf_utils
 
 
