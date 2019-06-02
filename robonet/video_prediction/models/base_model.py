@@ -7,7 +7,6 @@ import tensorflow as tf
 from tensorflow.contrib.training import HParams
 from tensorflow.python.util import nest
 
-import robonet.video_prediction as vp
 import robonet.video_prediction.utils.tf_utils
 from robonet.video_prediction.functional_ops import foldl
 from robonet.video_prediction.ops import pool2d
