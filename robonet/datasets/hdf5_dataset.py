@@ -1,4 +1,4 @@
-from visual_mpc.datasets.base_dataset import BaseVideoDataset
+from robonet.datasets.base_dataset import BaseVideoDataset
 import h5py
 import tensorflow as tf
 import numpy as np
@@ -6,24 +6,35 @@ import cv2
 import glob
 import random
 import math
+import imageio
+import io
 from collections import OrderedDict
 import copy
 import multiprocessing
 
 
 def _load_batch(assignment):
-    filename, img_T, ncam, img_dims = assignment
+    filename, img_T, ncam, img_dims, is_mp4 = assignment
     height, width = img_dims
     with h5py.File(filename, 'r') as hf:
         images = np.zeros((img_T, ncam, height, width, 3), dtype=np.uint8)
-        for t in range(img_T):
-            for n in range(ncam):
-                img = cv2.imdecode(hf['env']['cam{}_video'.format(n)]['frame{}'.format(t)][:], cv2.IMREAD_COLOR)
+        for n in range(ncam):
+            if is_mp4:
+                buf = io.BytesIO(hf['env']['cam{}_video'.format(n)]['frames'][:].tostring())
+                reader = imageio.get_reader(buf, format='mp4')
+                for t, img in enumerate(reader):
+                    method = cv2.INTER_CUBIC
+                    if height * width < img.shape[0] * img.shape[1]:
+                        method = cv2.INTER_AREA
+                    images[t, n] = cv2.resize(img[:,:,::-1], (width, height), interpolation=method)
+            else:
+                for t in range(img_T):
+                    img = cv2.imdecode(hf['env']['cam{}_video'.format(n)]['frame{}'.format(t)][:], cv2.IMREAD_COLOR)
 
-                method = cv2.INTER_CUBIC
-                if height * width < img.shape[0] * img.shape[1]:
-                    method = cv2.INTER_AREA
-                images[t, n] = cv2.resize(img, (width, height), interpolation=method)
+                    method = cv2.INTER_CUBIC
+                    if height * width < img.shape[0] * img.shape[1]:
+                        method = cv2.INTER_AREA
+                    images[t, n] = cv2.resize(img, (width, height), interpolation=method)
 
         actions = hf['policy']['actions'][:].astype(np.float32)
         states = hf['env']['state'][:].astype(np.float32)
@@ -51,8 +62,15 @@ class HDF5VideoDataset(BaseVideoDataset):
 
             self._ncam = f['env'].attrs.get('n_cams', 0)
             assert self._ncam > 0, "must be at least 1 camera!"
-            self._img_T = min([len(f['env']['cam{}_video'.format(i)]) for i in range(self._ncam)])
-            self._img_dim = f['env']['cam0_video']['frame0'].attrs['shape'][:2]
+
+            if 'frames' in f['env']['cam0_video']:
+                self._is_mp4 = True
+                self._img_T = min([f['env']['cam{}_video'.format(i)]['frames'].attrs['T'] for i in range(self._ncam)])
+                self._img_dim = f['env']['cam0_video']['frames'].attrs['shape'][:2]
+            else:
+                self._is_mp4 = False
+                self._img_T = min([len(f['env']['cam{}_video'.format(i)]) for i in range(self._ncam)])
+                self._img_dim = f['env']['cam0_video']['frame0'].attrs['shape'][:2]
 
             self._state_T, self._sdim = f['env']['state'].shape
             assert self._state_T == self._img_T, "#images should match #states!"
@@ -74,7 +92,7 @@ class HDF5VideoDataset(BaseVideoDataset):
                     break
                 self._rand.shuffle(files)
             batch_files = files[i:i+self._batch_size]
-            batch_files = [(f, self._img_T, self._ncam, self._hparams.img_dims) for f in batch_files]
+            batch_files = [(f, self._img_T, self._ncam, self._hparams.img_dims, self._is_mp4) for f in batch_files]
             i += self._batch_size
             batches = p.map(_load_batch, batch_files)
             actions, images, states = [], [], []

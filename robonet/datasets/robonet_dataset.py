@@ -1,5 +1,5 @@
-from visual_mpc.datasets.hdf5_dataset import HDF5VideoDataset
-from visual_mpc.datasets.save_util.filter_dataset import cached_filter_hdf5
+from robonet.datasets.hdf5_dataset import HDF5VideoDataset
+from robonet.datasets.save_util.filter_dataset import cached_filter_hdf5
 import copy
 import random
 import tensorflow as tf
@@ -104,11 +104,34 @@ class RoboNetDataset(HDF5VideoDataset):
 
 
 if __name__ == '__main__':
+    import imageio
     import argparse
+    import time
+    import numpy as np
+
+
     parser = argparse.ArgumentParser(description="converts dataset from pkl format to hdf5")
     parser.add_argument('input_folder', type=str, help='folder containing hdf5 files')
+    parser.add_argument('--N', type=int, help='number of timing tests to run', default=10)
+    parser.add_argument('--debug_gif', type=str, help='saves debug gif at given path if desired', default='')
     args = parser.parse_args()
 
     path = args.input_folder
-    rn = RoboNetDataset(path, [16], {'filters': [{"metadata/bin_insert": "none"}]})
+    rn = RoboNetDataset(path, [16])
     images, states, actions = rn['images'], rn['states'], rn['actions']
+
+    s = tf.Session()
+    imgs = s.run(images)
+    print('images shape', imgs.shape)
+
+    if args.N:
+        start = time.time()
+        for i in range(args.N):
+            imgs = s.run(images)
+        end = time.time()
+        print('loading took {} seconds on average!'.format((end - start) / float(args.N)))
+    if args.debug_gif:
+        path = args.debug_gif + '.gif'
+        writer = imageio.get_writer(path)
+        [writer.append_data(imgs[0, t, 0].astype(np.uint8)) for t in range(imgs.shape[1])]
+        writer.close()
