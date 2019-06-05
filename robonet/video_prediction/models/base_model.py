@@ -7,6 +7,9 @@ import tensorflow as tf
 from tensorflow.contrib.training import HParams
 from tensorflow.python.util import nest
 
+
+from robonet.video_prediction import metrics
+from robonet.video_prediction import losses
 import robonet.video_prediction.utils.tf_utils
 from robonet.video_prediction.functional_ops import foldl
 from robonet.video_prediction.ops import pool2d
@@ -113,21 +116,21 @@ class BaseVideoPredictionModel(object):
             vgg_network.vgg16(tf.placeholder(tf.float32, shape=[None] * 4))
 
     def metrics_fn(self, inputs, outputs, targets):
-        metrics = OrderedDict()
+        metric_summaries = OrderedDict()
         target_images = targets
         gen_images = outputs['gen_images']
         metric_fns = [
-            ('psnr', vp.metrics.peak_signal_to_noise_ratio),
-            ('mse', vp.metrics.mean_squared_error),
-            ('ssim', vp.metrics.structural_similarity),
-            ('ssim_scikit', vp.metrics.structural_similarity_scikit),
-            ('ssim_finn', vp.metrics.structural_similarity_finn),
-            ('vgg_csim', vp.metrics.vgg_cosine_similarity),
-            ('vgg_cdist', vp.metrics.vgg_cosine_distance),
+            ('psnr', metrics.peak_signal_to_noise_ratio),
+            ('mse', metrics.mean_squared_error),
+            ('ssim', metrics.structural_similarity),
+            ('ssim_scikit', metrics.structural_similarity_scikit),
+            ('ssim_finn', metrics.structural_similarity_finn),
+            ('vgg_csim', metrics.vgg_cosine_similarity),
+            ('vgg_cdist', metrics.vgg_cosine_distance),
         ]
         for metric_name, metric_fn in metric_fns:
-            metrics[metric_name] = metric_fn(target_images, gen_images)
-        return metrics
+            metric_summaries[metric_name] = metric_fn(target_images, gen_images)
+        return metric_summaries
 
     def eval_outputs_and_metrics_fn(self, inputs, outputs, targets, num_samples=None, parallel_iterations=None):
         num_samples = num_samples or self.eval_num_samples
@@ -135,13 +138,13 @@ class BaseVideoPredictionModel(object):
         eval_outputs = OrderedDict()
         eval_metrics = OrderedDict()
         metric_fns = [
-            ('psnr', vp.metrics.peak_signal_to_noise_ratio),
-            ('mse', vp.metrics.mean_squared_error),
-            ('ssim', vp.metrics.structural_similarity),
-            ('ssim_scikit', vp.metrics.structural_similarity_scikit),
-            ('ssim_finn', vp.metrics.structural_similarity_finn),
-            ('vgg_csim', vp.metrics.vgg_cosine_similarity),
-            ('vgg_cdist', vp.metrics.vgg_cosine_distance),
+            ('psnr', metrics.peak_signal_to_noise_ratio),
+            ('mse', metrics.mean_squared_error),
+            ('ssim', metrics.structural_similarity),
+            ('ssim_scikit', metrics.structural_similarity_scikit),
+            ('ssim_finn', metrics.structural_similarity_finn),
+            ('vgg_csim', metrics.vgg_cosine_similarity),
+            ('vgg_cdist', metrics.vgg_cosine_distance),
         ]
         eval_outputs['eval_images'] = targets
         if self.deterministic:
@@ -170,7 +173,7 @@ class BaseVideoPredictionModel(object):
                     _, gen_vgg_features = robonet.video_prediction.utils.tf_utils.with_flat_batch(vgg_network.vgg16)(gen_images)
                 for name, metric_fn in metric_fns:
                     if name in ('vgg_csim', 'vgg_cdist'):
-                        metric_fn = {'vgg_csim': vp.metrics.cosine_similarity, 'vgg_cdist': vp.metrics.cosine_distance}[name]
+                        metric_fn = {'vgg_csim': metrics.cosine_similarity, 'vgg_cdist': metrics.cosine_distance}[name]
                         metric = 0.0
                         for feature0, feature1 in zip(target_vgg_features, gen_vgg_features):
                             metric += metric_fn(feature0, feature1, keep_axis=(0, 1))
@@ -657,10 +660,10 @@ class VideoPredictionModel(BaseVideoPredictionModel):
             gen_images = outputs.get('gen_images_enc', outputs['gen_images'])
             target_images = targets
         if hparams.l1_weight:
-            gen_l1_loss = vp.losses.l1_loss(gen_images, target_images)
+            gen_l1_loss = losses.l1_loss(gen_images, target_images)
             gen_losses["gen_l1_loss"] = (gen_l1_loss, hparams.l1_weight)
         if hparams.l2_weight:
-            gen_l2_loss = vp.losses.l2_loss(gen_images, target_images)
+            gen_l2_loss = losses.l2_loss(gen_images, target_images)
             gen_losses["gen_l2_loss"] = (gen_l2_loss, hparams.l2_weight)
         if (hparams.l1_weight or hparams.l2_weight) and hparams.num_scales > 1:
             for i in range(1, hparams.num_scales):
@@ -668,28 +671,28 @@ class VideoPredictionModel(BaseVideoPredictionModel):
                 gen_images_scale = tf_utils.with_flat_batch(pool2d)(gen_images, scale_factor, scale_factor, pool_mode='avg')
                 target_images_scale = tf_utils.with_flat_batch(pool2d)(target_images, scale_factor, scale_factor, pool_mode='avg')
                 if hparams.l1_weight:
-                    gen_l1_scale_loss = vp.losses.l1_loss(gen_images_scale, target_images_scale)
+                    gen_l1_scale_loss = losses.l1_loss(gen_images_scale, target_images_scale)
                     gen_losses["gen_l1_scale%d_loss" % i] = (gen_l1_scale_loss, hparams.l1_weight)
                 if hparams.l2_weight:
-                    gen_l2_scale_loss = vp.losses.l2_loss(gen_images_scale, target_images_scale)
+                    gen_l2_scale_loss = losses.l2_loss(gen_images_scale, target_images_scale)
                     gen_losses["gen_l2_scale%d_loss" % i] = (gen_l2_scale_loss, hparams.l2_weight)
         if hparams.vgg_cdist_weight:
-            gen_vgg_cdist_loss = vp.metrics.vgg_cosine_distance(gen_images, target_images)
+            gen_vgg_cdist_loss = metrics.vgg_cosine_distance(gen_images, target_images)
             gen_losses['gen_vgg_cdist_loss'] = (gen_vgg_cdist_loss, hparams.vgg_cdist_weight)
         if hparams.feature_l2_weight:
             gen_features = outputs.get('gen_features_enc', outputs['gen_features'])
             target_features = outputs['features'][hparams.context_frames:]
-            gen_feature_l2_loss = vp.losses.l2_loss(gen_features, target_features)
+            gen_feature_l2_loss = losses.l2_loss(gen_features, target_features)
             gen_losses["gen_feature_l2_loss"] = (gen_feature_l2_loss, hparams.feature_l2_weight)
         if hparams.ae_l2_weight:
             gen_images_dec = outputs.get('gen_images_dec_enc', outputs['gen_images_dec'])  # they both should be the same
             target_images = inputs['images']
-            gen_ae_l2_loss = vp.losses.l2_loss(gen_images_dec, target_images)
+            gen_ae_l2_loss = losses.l2_loss(gen_images_dec, target_images)
             gen_losses["gen_ae_l2_loss"] = (gen_ae_l2_loss, hparams.ae_l2_weight)
         if hparams.state_weight:
             gen_states = outputs.get('gen_states_enc', outputs['gen_states'])
             target_states = inputs['states'][hparams.context_frames:]
-            gen_state_loss = vp.losses.l2_loss(gen_states, target_states)
+            gen_state_loss = losses.l2_loss(gen_states, target_states)
             gen_losses["gen_state_loss"] = (gen_state_loss, hparams.state_weight)
         if hparams.tv_weight:
             gen_flows = outputs.get('gen_flows_enc', outputs['gen_flows'])
@@ -708,7 +711,7 @@ class VideoPredictionModel(BaseVideoPredictionModel):
                        '_video_sn': hparams.video_sn_gan_weight}
         for infix, gan_weight in gan_weights.items():
             if gan_weight:
-                gen_gan_loss = vp.losses.gan_loss(outputs['discrim%s_logits_fake' % infix], 1.0, hparams.gan_loss_type)
+                gen_gan_loss = losses.gan_loss(outputs['discrim%s_logits_fake' % infix], 1.0, hparams.gan_loss_type)
                 gen_losses["gen%s_gan_loss" % infix] = (gen_gan_loss, gan_weight)
             if gan_weight and (hparams.gan_feature_l2_weight or hparams.gan_feature_cdist_weight):
                 i_feature = 0
@@ -723,11 +726,11 @@ class VideoPredictionModel(BaseVideoPredictionModel):
                     discrim_features_real.append(discrim_feature_real)
                     i_feature += 1
                 if hparams.gan_feature_l2_weight:
-                    gen_gan_feature_l2_loss = sum([vp.losses.l2_loss(discrim_feature_fake, discrim_feature_real)
+                    gen_gan_feature_l2_loss = sum([losses.l2_loss(discrim_feature_fake, discrim_feature_real)
                                                    for discrim_feature_fake, discrim_feature_real in zip(discrim_features_fake, discrim_features_real)])
                     gen_losses["gen%s_gan_feature_l2_loss" % infix] = (gen_gan_feature_l2_loss, hparams.gan_feature_l2_weight)
                 if hparams.gan_feature_cdist_weight:
-                    gen_gan_feature_cdist_loss = sum([vp.metrics.cosine_distance(discrim_feature_fake, discrim_feature_real)
+                    gen_gan_feature_cdist_loss = sum([metrics.cosine_distance(discrim_feature_fake, discrim_feature_real)
                                                       for discrim_feature_fake, discrim_feature_real in zip(discrim_features_fake, discrim_features_real)])
                     gen_losses["gen%s_gan_feature_cdist_loss" % infix] = (gen_gan_feature_cdist_loss, hparams.gan_feature_cdist_weight)
         vae_gan_weights = {'': hparams.vae_gan_weight,
@@ -739,7 +742,7 @@ class VideoPredictionModel(BaseVideoPredictionModel):
                            '_video_sn': hparams.video_sn_vae_gan_weight}
         for infix, vae_gan_weight in vae_gan_weights.items():
             if vae_gan_weight:
-                gen_vae_gan_loss = vp.losses.gan_loss(outputs['discrim%s_logits_enc_fake' % infix], 1.0, hparams.gan_loss_type)
+                gen_vae_gan_loss = losses.gan_loss(outputs['discrim%s_logits_enc_fake' % infix], 1.0, hparams.gan_loss_type)
                 gen_losses["gen%s_vae_gan_loss" % infix] = (gen_vae_gan_loss, vae_gan_weight)
             if vae_gan_weight and (hparams.gan_feature_l2_weight or hparams.gan_feature_cdist_weight):
                 i_feature = 0
@@ -754,18 +757,18 @@ class VideoPredictionModel(BaseVideoPredictionModel):
                     discrim_features_enc_real.append(discrim_feature_enc_real)
                     i_feature += 1
                 if hparams.gan_feature_l2_weight:
-                    gen_vae_gan_feature_l2_loss = sum([vp.losses.l2_loss(discrim_feature_enc_fake, discrim_feature_enc_real)
+                    gen_vae_gan_feature_l2_loss = sum([losses.l2_loss(discrim_feature_enc_fake, discrim_feature_enc_real)
                                                        for discrim_feature_enc_fake, discrim_feature_enc_real in zip(discrim_features_enc_fake, discrim_features_enc_real)])
                     gen_losses["gen%s_vae_gan_feature_l2_loss" % infix] = (gen_vae_gan_feature_l2_loss, hparams.gan_feature_l2_weight)
                 if hparams.gan_feature_cdist_weight:
-                    gen_vae_gan_feature_cdist_loss = sum([vp.metrics.cosine_distance(discrim_feature_enc_fake, discrim_feature_enc_real)
+                    gen_vae_gan_feature_cdist_loss = sum([metrics.cosine_distance(discrim_feature_enc_fake, discrim_feature_enc_real)
                                                           for discrim_feature_enc_fake, discrim_feature_enc_real in zip(discrim_features_enc_fake, discrim_features_enc_real)])
                     gen_losses["gen%s_vae_gan_feature_cdist_loss" % infix] = (gen_vae_gan_feature_cdist_loss, hparams.gan_feature_cdist_weight)
         if hparams.kl_weight:
-            gen_kl_loss = vp.losses.kl_loss(outputs['enc_zs_mu'], outputs['enc_zs_log_sigma_sq'])
+            gen_kl_loss = losses.kl_loss(outputs['enc_zs_mu'], outputs['enc_zs_log_sigma_sq'])
             gen_losses["gen_kl_loss"] = (gen_kl_loss, self.kl_weight)  # possibly annealed kl_weight
         if hparams.z_l1_weight:
-            gen_z_l1_loss = vp.losses.l1_loss(outputs['gen_enc_zs_mu'], outputs['gen_zs_random'])
+            gen_z_l1_loss = losses.l1_loss(outputs['gen_enc_zs_mu'], outputs['gen_zs_random'])
             gen_losses["gen_z_l1_loss"] = (gen_z_l1_loss, hparams.z_l1_weight)
         return gen_losses
 
@@ -781,8 +784,8 @@ class VideoPredictionModel(BaseVideoPredictionModel):
                        '_video_sn': hparams.video_sn_gan_weight}
         for infix, gan_weight in gan_weights.items():
             if gan_weight:
-                discrim_gan_loss_real = vp.losses.gan_loss(outputs['discrim%s_logits_real' % infix], 1.0, hparams.gan_loss_type)
-                discrim_gan_loss_fake = vp.losses.gan_loss(outputs['discrim%s_logits_fake' % infix], 0.0, hparams.gan_loss_type)
+                discrim_gan_loss_real = losses.gan_loss(outputs['discrim%s_logits_real' % infix], 1.0, hparams.gan_loss_type)
+                discrim_gan_loss_fake = losses.gan_loss(outputs['discrim%s_logits_fake' % infix], 0.0, hparams.gan_loss_type)
                 discrim_gan_loss = discrim_gan_loss_real + discrim_gan_loss_fake
                 discrim_losses["discrim%s_gan_loss" % infix] = (discrim_gan_loss, gan_weight)
         vae_gan_weights = {'': hparams.vae_gan_weight,
@@ -794,8 +797,8 @@ class VideoPredictionModel(BaseVideoPredictionModel):
                            '_video_sn': hparams.video_sn_vae_gan_weight}
         for infix, vae_gan_weight in vae_gan_weights.items():
             if vae_gan_weight:
-                discrim_vae_gan_loss_real = vp.losses.gan_loss(outputs['discrim%s_logits_enc_real' % infix], 1.0, hparams.gan_loss_type)
-                discrim_vae_gan_loss_fake = vp.losses.gan_loss(outputs['discrim%s_logits_enc_fake' % infix], 0.0, hparams.gan_loss_type)
+                discrim_vae_gan_loss_real = losses.gan_loss(outputs['discrim%s_logits_enc_real' % infix], 1.0, hparams.gan_loss_type)
+                discrim_vae_gan_loss_fake = losses.gan_loss(outputs['discrim%s_logits_enc_fake' % infix], 0.0, hparams.gan_loss_type)
                 discrim_vae_gan_loss = discrim_vae_gan_loss_real + discrim_vae_gan_loss_fake
                 discrim_losses["discrim%s_vae_gan_loss" % infix] = (discrim_vae_gan_loss, vae_gan_weight)
         return discrim_losses

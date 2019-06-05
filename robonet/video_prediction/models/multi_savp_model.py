@@ -611,10 +611,10 @@ class MultiSAVPVideoPredictionModel(SAVPVideoPredictionModel):
                 gen_images = outputs.get('gen_images%s_enc' % suffix, outputs['gen_images' + suffix])
                 target_images = inputs['images' + suffix][self.hparams.context_frames:]
             if hparams.l1_weight:
-                gen_l1_loss = vp.losses.l1_loss(gen_images, target_images)
+                gen_l1_loss = losses.l1_loss(gen_images, target_images)
                 gen_losses["gen_l1_loss" + suffix] = (gen_l1_loss, hparams.l1_weight)
             if hparams.l2_weight:
-                gen_l2_loss = vp.losses.l2_loss(gen_images, target_images)
+                gen_l2_loss = losses.l2_loss(gen_images, target_images)
                 gen_losses["gen_l2_loss" + suffix] = (gen_l2_loss, hparams.l2_weight)
             if (hparams.l1_weight or hparams.l2_weight) and hparams.num_scales > 1:
                 raise NotImplementedError

@@ -65,6 +65,9 @@ class _StrHashDict:
 
 
 def filter_hdf5_datasets(dataset_files):
+    """
+    TODO: Investigate using pandas as a better way to implement this table
+    """
     distinct_datasets = {}
     print('filtering datasets.....')
     for  f in tqdm(dataset_files):

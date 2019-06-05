@@ -42,11 +42,30 @@ def _load_batch(assignment):
     return actions, images[:,:,:,:,::-1], states 
 
 
+def _slice_helper(tensor, start_i, N, axis):
+    shape = tensor.get_shape().as_list()
+    assert 0 <= axis < len(shape), "bad axis!"
+
+    starts = [0 for _ in shape]
+    ends = shape
+    starts[axis], ends[axis] = start_i, N
+
+    return tf.slice(tensor, starts, ends)
+
+
+def _grab_cam(image_tensor, selected_cams):
+    b_dim = image_tensor.get_shape().as_list()[0]
+    tensors = []
+    for b in range(b_dim):
+        tensors.append(image_tensor[b, :, selected_cams[b]][None])
+    return tf.concat(tensors, axis=0)
+
+
 class HDF5VideoDataset(BaseVideoDataset):
     def _init_dataset(self):
         # read hdf5 from base dir and check contents
         dataset_contents = self._get_filenames()
-        
+        print('loading {} examples'.format(len(dataset_contents)))
         assert len(dataset_contents), "No hdf5 files in dataset!"
 
         # consistent shuffling of dataset contents according to set RNG
@@ -79,6 +98,7 @@ class HDF5VideoDataset(BaseVideoDataset):
             self._parser_dtypes = [tf.float32, tf.string, tf.float32]
         
         self._mode_datasets = self._init_queues(dataset_contents)
+        self._rand_start, self._rand_cam = None, None
     
     def _gen_hdf5(self, files, mode):
         p = multiprocessing.Pool(min(multiprocessing.cpu_count(), self._batch_size))
@@ -120,6 +140,7 @@ class HDF5VideoDataset(BaseVideoDataset):
         splits = OrderedDict()
         for i, name in enumerate(self.MODES):
             splits[name] = hdf5_files[split_lengths[i]:split_lengths[i+1]]
+        self._num_ex = len(splits['train'])
 
         mode_datasets = {}
         for name, files in splits.items():
@@ -157,6 +178,31 @@ class HDF5VideoDataset(BaseVideoDataset):
     @property
     def ncam(self):
         return self._ncam
+
+    def make_input_targets(self, n_frames, n_context, mode, img_dtype=tf.float32):
+        assert n_frames > n_context and n_context >= 0
+        if self._rand_start is None:
+            img_T = self._get('images', mode).get_shape().as_list()[1]
+            self._rand_start = tf.random_uniform((), maxval=img_T - n_frames + 1, dtype=tf.int32)
+
+        if self._rand_cam is None:
+            n_cam =  self._get('images', mode).get_shape().as_list()[2]
+            self._rand_cam = tf.random_uniform((self._batch_size,), maxval=n_cam, dtype=tf.int32)
+        
+        inputs = OrderedDict()
+        img_slice =  _grab_cam(_slice_helper(self._get('images', mode), self._rand_start, n_frames, 1), self._rand_cam)
+        
+        inputs['images'] = tf.cast(img_slice / 255.0, img_dtype)
+        inputs['states'] = _slice_helper(self._get('states', mode), self._rand_start, n_frames, 1)
+        inputs['actions'] = _slice_helper(self._get('actions', mode), self._rand_start, n_frames-1, 1)
+        
+        targets = _grab_cam(_slice_helper(self._get('images', mode), self._rand_start + n_context, n_frames - n_context, 1), self._rand_cam)
+        targets = tf.cast(targets / 255.0, img_dtype)
+        return inputs, targets
+    
+    @property
+    def num_examples_per_epoch(self):
+        return self._num_ex
 
 
 if __name__ == '__main__':

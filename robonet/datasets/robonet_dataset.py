@@ -84,24 +84,24 @@ class RoboNetDataset(HDF5VideoDataset):
         
         dataset_batches = {}
         if self._filters:
-            # should rework this section
-            raise NotImplementedError
+            chosen_files = []
+            for f in self._filters:
+                [chosen_files.extend(filtered_datasets[k]) for k in chosen_ncams if _check_filter(k, f)]
+            self._data_loader = HDF5VideoDataset(chosen_files, self._batch_size, self._dict_copy, append_path=self._files)
         else:
             chosen_files = []
             [chosen_files.extend(filtered_datasets[k]) for k in chosen_ncam]
-            self._data_loaders = [HDF5VideoDataset(chosen_files, self._batch_size, self._dict_copy, append_path=self._files)]
+            self._data_loader = HDF5VideoDataset(chosen_files, self._batch_size, self._dict_copy, append_path=self._files)
     
     def _get(self, key, mode):
-        ret_tensor = []
-        for dataset in self._data_loaders:
-            if key == 'images' and self._source_views:
-                cam_images = tf.transpose(dataset[key, mode], [2, 0, 1, 3, 4, 5])
-                chosen_cams = tf.gather(cam_images, self._source_views)
-                ret_tensor.append(tf.transpose(cam_images, [1, 2, 0, 3, 4, 5]))
-            else:
-                ret_tensor.append(dataset[key, mode])
-        return tf.concat(ret_tensor, axis=0)
+        return self._data_loader[key, mode]
 
+    def make_input_targets(self, n_frames, n_context, mode, img_dtype=tf.float32):
+        return self._data_loader.make_input_targets(n_frames, n_context, mode, img_dtype)
+    
+    @property
+    def num_examples_per_epoch(self):
+        return self._data_loader.num_examples_per_epoch
 
 if __name__ == '__main__':
     import imageio

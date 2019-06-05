@@ -1,4 +1,5 @@
 import os
+import tensorflow as tf
 from tensorflow.contrib.training import HParams
 import glob
 import copy
@@ -63,3 +64,14 @@ class BaseVideoDataset(object):
     @property
     def batch_size(self):
         return self._batch_size
+
+    def make_input_targets(self, n_frames, n_context, mode, img_dtype=tf.float32):
+        raise NotImplementedError
+
+    @property
+    def hparams(self):
+        return self._hparams.values()
+
+    @property
+    def num_examples_per_epoch(self):
+        raise NotImplementedError

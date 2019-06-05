@@ -18,7 +18,7 @@ import tensorflow as tf
 from tensorflow.python.util import nest
 
 from robonet.video_prediction import  models
-import robonet.dataset as datasets
+import robonet.datasets as datasets
 from robonet.video_prediction.utils import ffmpeg_gif, tf_utils
 
 
@@ -124,8 +124,9 @@ def main():
     batch_size = train_model.hparams.batch_size
 
     # load datasets
+    dataset_hparams_dict = json.load(open(dataset_hparams_file, 'r'))
     dataset_class = datasets.get_dataset_class(args.dataset)
-    dataset = dataset_class(args.input_dirs, dataset_hparams_file, batch_size)
+    dataset = dataset_class(args.input_dirs, batch_size, dataset_hparams_dict)
 
     with tf.variable_scope('') as training_scope:
         inputs, targets = dataset.make_input_targets(model_hparams_dict['sequence_length'], model_hparams_dict['context_frames'], 'train')
@@ -140,7 +141,7 @@ def main():
     with open(os.path.join(args.output_dir, "options.json"), "w") as f:
         f.write(json.dumps(vars(args), sort_keys=True, indent=4))
     with open(os.path.join(args.output_dir, "dataset_hparams.json"), "w") as f:
-        f.write(json.dumps(dataset.hparams.values(), sort_keys=True, indent=4))  # save hparams from first dataset
+        f.write(json.dumps(dataset.hparams, sort_keys=True, indent=4))  # save hparams from first dataset
     with open(os.path.join(args.output_dir, "model_hparams.json"), "w") as f:
         f.write(json.dumps(train_model.hparams.values(), sort_keys=True, indent=4))
 
@@ -238,7 +239,7 @@ def main():
 
             if should(args.progress_freq):
                 # global_step will have the correct step count if we resume from a checkpoint
-                steps_per_epoch = math.ceil(dataset.num_examples_per_epoch() / batch_size)
+                steps_per_epoch = math.ceil(dataset.num_examples_per_epoch / batch_size)
                 train_epoch = math.ceil(global_step.eval() / steps_per_epoch)
                 train_step = (global_step.eval() - 1) % steps_per_epoch + 1
                 print("progress  global step %d  epoch %d  step %d" % (global_step.eval(), train_epoch, train_step))
