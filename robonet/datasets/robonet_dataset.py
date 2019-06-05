@@ -127,7 +127,9 @@ if __name__ == '__main__':
     if args.N:
         start = time.time()
         for i in range(args.N):
+            b_start = time.time()
             imgs = s.run(images)
+            print('load {} was {} seconds'.format(i, time.time() - b_start))
         end = time.time()
         print('loading took {} seconds on average!'.format((end - start) / float(args.N)))
     if args.debug_gif:
