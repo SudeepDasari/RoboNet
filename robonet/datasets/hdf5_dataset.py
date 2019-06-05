@@ -209,7 +209,7 @@ class HDF5VideoDataset(BaseVideoDataset):
         
         inputs = OrderedDict()
         img_slice =  _slice_helper(self._get('images', mode), self._rand_start, n_frames, 1) 
-        if self._hparams.load_single_rand_cam:
+        if not self._hparams.load_single_rand_cam:
             img_slice = _grab_cam(img_slice, self._rand_cam)
         else:
             import pdb; pdb.set_trace()
