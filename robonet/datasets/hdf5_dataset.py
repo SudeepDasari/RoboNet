@@ -14,12 +14,20 @@ import multiprocessing
 
 
 def _load_batch(assignment):
-    filename, img_T, ncam, img_dims, is_mp4 = assignment
+    filename, img_T, ncam, img_dims, is_mp4, load_single_rand_cam = assignment
     height, width = img_dims
+
+    if load_single_rand_cam:
+        ncam = 1
+        rand_cam = random.randint(0, ncam - 1)
+        cam_range = range(rand_cam, rand_cam + 1)
+    else:
+        cam_range = range(ncam)
+    
     with h5py.File(filename, 'r') as hf:
+        images = np.zeros((ncam, img_T, height, width, 3), dtype=np.uint8)
         if is_mp4:
-            images = np.zeros((ncam, img_T, height, width, 3), dtype=np.uint8)
-            for n in range(ncam):
+            for n in cam_range:
                 buf = io.BytesIO(hf['env']['cam{}_video'.format(n)]['frames'][:].tostring())
                 reader = imageio.get_reader(buf, format='mp4')
                 
@@ -28,22 +36,22 @@ def _load_batch(assignment):
                     if height * width < img.shape[0] * img.shape[1]:
                         method = cv2.INTER_AREA
                     images[n, t] = cv2.resize(img[:,:,::-1], (width, height), interpolation=method)
-            images = np.swapaxes(images, 0, 1)
+            
         else:
-            images = np.zeros((img_T, ncam, height, width, 3), dtype=np.uint8)
-            for t in range(img_T):
-                for n in range(ncam):
+            for n in cam_range:
+                for t in range(img_T):
                     img = cv2.imdecode(hf['env']['cam{}_video'.format(n)]['frame{}'.format(t)][:], cv2.IMREAD_COLOR)
 
                     method = cv2.INTER_CUBIC
                     if height * width < img.shape[0] * img.shape[1]:
                         method = cv2.INTER_AREA
-                    images[t, n] = cv2.resize(img, (width, height), interpolation=method)
+                    images[n, t] = cv2.resize(img, (width, height), interpolation=method)
+        images = np.swapaxes(images, 0, 1)
 
         actions = hf['policy']['actions'][:].astype(np.float32)
         states = hf['env']['state'][:].astype(np.float32)
 
-    return actions, images[:,:,:,:,::-1], states 
+    return actions, images[:,:,:,:,::-1], states
 
 
 def _slice_helper(tensor, start_i, N, axis):
@@ -102,7 +110,9 @@ class HDF5VideoDataset(BaseVideoDataset):
             self._parser_dtypes = [tf.float32, tf.string, tf.float32]
         
         self._mode_datasets = self._init_queues(dataset_contents)
-        self._rand_start, self._rand_cam = None, None
+        self._rand_start = None
+        if not self._hparams.load_single_rand_cam:
+            self._rand_cam = None
     
     def _gen_hdf5(self, files, mode):
         p = multiprocessing.Pool(self._batch_size)
@@ -116,7 +126,7 @@ class HDF5VideoDataset(BaseVideoDataset):
                     break
                 self._rand.shuffle(files)
             batch_files = files[i:i+self._batch_size]
-            batch_files = [(f, self._img_T, self._ncam, self._hparams.img_dims, self._is_mp4) for f in batch_files]
+            batch_files = [(f, self._img_T, self._ncam, self._hparams.img_dims, self._is_mp4, self._hparams.load_single_rand_cam) for f in batch_files]
             i += self._batch_size
             batches = p.map(_load_batch, batch_files)
             actions, images, states = [], [], []
@@ -134,7 +144,10 @@ class HDF5VideoDataset(BaseVideoDataset):
     
     def _get_dict_act_img(self, actions, images):
         actions = tf.reshape(actions, [self._batch_size, self._action_T, self._adim])
-        images = tf.reshape(images, [self._batch_size, self._img_T, self._ncam, self._hparams.img_dims[0], self._hparams.img_dims[1], 3])
+        load_cam = self._ncam
+        if self._hparams.load_single_rand_cam:
+            load_cam = 1
+        images = tf.reshape(images, [self._batch_size, self._img_T, load_cam, self._hparams.img_dims[0], self._hparams.img_dims[1], 3])
         return {'actions': actions, 'images': tf.cast(images, tf.float32)}
     
     def _init_queues(self, hdf5_files):
@@ -153,7 +166,7 @@ class HDF5VideoDataset(BaseVideoDataset):
             dataset = dataset.map(self._get_dict_act_img_state).prefetch(100)
             iterator = dataset.make_one_shot_iterator()
             next_element = iterator.get_next()
-            
+            print(next_element)
             output_element = {}
             for k in list(next_element.keys()):
                 output_element[k] = tf.reshape(next_element[k],
@@ -173,9 +186,10 @@ class HDF5VideoDataset(BaseVideoDataset):
         
         # set None if you want a random seed for dataset shuffling
         default_params.add_hparam('RNG', 11381294392481135266)
-        default_params.add_hparam('splits', [0.9, 0.05, 0.05])   # (train, val, test) split
+        default_params.add_hparam('splits', [0.9, 0.05, 0.05])       # (train, val, test) split
         default_params.add_hparam('img_dims', (48, 64))
         default_params.add_hparam('max_start', -1)
+        default_params.add_hparam('load_single_rand_cam', True)      # if True then only load one camera at random instead of all frames
         
         return default_params
 
@@ -189,12 +203,17 @@ class HDF5VideoDataset(BaseVideoDataset):
             img_T = self._get('images', mode).get_shape().as_list()[1]
             self._rand_start = tf.random_uniform((), maxval=img_T - n_frames + 1, dtype=tf.int32)
 
-        if self._rand_cam is None:
+        if not self._hparams.load_single_rand_cam and self._rand_cam is None:
             n_cam =  self._get('images', mode).get_shape().as_list()[2]
             self._rand_cam = tf.random_uniform((self._batch_size,), maxval=n_cam, dtype=tf.int32)
         
         inputs = OrderedDict()
-        img_slice =  _grab_cam(_slice_helper(self._get('images', mode), self._rand_start, n_frames, 1), self._rand_cam)
+        img_slice =  _slice_helper(self._get('images', mode), self._rand_start, n_frames, 1) 
+        if self._hparams.load_single_rand_cam:
+            img_slice = _grab_cam(img_slice, self._rand_cam)
+        else:
+            import pdb; pdb.set_trace()
+            img_slice = img_slice[:, :, 0]
         
         inputs['images'] = tf.cast(img_slice / 255.0, img_dtype)
         inputs['states'] = _slice_helper(self._get('states', mode), self._rand_start, n_frames, 1)
