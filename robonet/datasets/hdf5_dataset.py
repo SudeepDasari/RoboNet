@@ -105,7 +105,7 @@ class HDF5VideoDataset(BaseVideoDataset):
         self._rand_start, self._rand_cam = None, None
     
     def _gen_hdf5(self, files, mode):
-        p = multiprocessing.Pool(min(multiprocessing.cpu_count(), self._batch_size))
+        p = multiprocessing.Pool(self._batch_size)
         files = copy.deepcopy(files)
         i, n_epochs = 0, 0
 
@@ -150,7 +150,7 @@ class HDF5VideoDataset(BaseVideoDataset):
         for name, files in splits.items():
             assert 'state' in self._valid_keys, "assume all records have state"
             dataset = tf.data.Dataset.from_generator(lambda:self._gen_hdf5(files, name), (tf.float32, tf.uint8, tf.float32))
-            dataset = dataset.map(self._get_dict_act_img_state).prefetch(10)
+            dataset = dataset.map(self._get_dict_act_img_state).prefetch(100)
             iterator = dataset.make_one_shot_iterator()
             next_element = iterator.get_next()
             
