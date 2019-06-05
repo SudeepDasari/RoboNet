@@ -166,7 +166,7 @@ class HDF5VideoDataset(BaseVideoDataset):
             dataset = dataset.map(self._get_dict_act_img_state).prefetch(100)
             iterator = dataset.make_one_shot_iterator()
             next_element = iterator.get_next()
-            print(next_element)
+
             output_element = {}
             for k in list(next_element.keys()):
                 output_element[k] = tf.reshape(next_element[k],
@@ -209,16 +209,18 @@ class HDF5VideoDataset(BaseVideoDataset):
         
         inputs = OrderedDict()
         img_slice =  _slice_helper(self._get('images', mode), self._rand_start, n_frames, 1) 
+        targets_slice = _slice_helper(self._get('images', mode), self._rand_start + n_context, n_frames - n_context, 1)
         if not self._hparams.load_single_rand_cam:
             img_slice = _grab_cam(img_slice, self._rand_cam)
+            targets = _grab_cam(targets_slice, self._rand_cam)
         else:
+            targets = targets_slice[:, :, 0]
             img_slice = img_slice[:, :, 0]
         
         inputs['images'] = tf.cast(img_slice / 255.0, img_dtype)
         inputs['states'] = _slice_helper(self._get('states', mode), self._rand_start, n_frames, 1)
         inputs['actions'] = _slice_helper(self._get('actions', mode), self._rand_start, n_frames-1, 1)
         
-        targets = _grab_cam(_slice_helper(self._get('images', mode), self._rand_start + n_context, n_frames - n_context, 1), self._rand_cam)
         targets = tf.cast(targets / 255.0, img_dtype)
         return inputs, targets
     
