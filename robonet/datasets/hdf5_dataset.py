@@ -17,18 +17,22 @@ def _load_batch(assignment):
     filename, img_T, ncam, img_dims, is_mp4 = assignment
     height, width = img_dims
     with h5py.File(filename, 'r') as hf:
-        images = np.zeros((img_T, ncam, height, width, 3), dtype=np.uint8)
-        for n in range(ncam):
-            if is_mp4:
+        if is_mp4:
+            images = np.zeros((ncam, img_T, height, width, 3), dtype=np.uint8)
+            for n in range(ncam):
                 buf = io.BytesIO(hf['env']['cam{}_video'.format(n)]['frames'][:].tostring())
                 reader = imageio.get_reader(buf, format='mp4')
+                
                 for t, img in enumerate(reader):
                     method = cv2.INTER_CUBIC
                     if height * width < img.shape[0] * img.shape[1]:
                         method = cv2.INTER_AREA
-                    images[t, n] = cv2.resize(img[:,:,::-1], (width, height), interpolation=method)
-            else:
-                for t in range(img_T):
+                    images[n, t] = cv2.resize(img[:,:,::-1], (width, height), interpolation=method)
+            images = np.swapaxes(images, 0, 1)
+        else:
+            images = np.zeros((img_T, ncam, height, width, 3), dtype=np.uint8)
+            for t in range(img_T):
+                for n in range(ncam):
                     img = cv2.imdecode(hf['env']['cam{}_video'.format(n)]['frame{}'.format(t)][:], cv2.IMREAD_COLOR)
 
                     method = cv2.INTER_CUBIC
