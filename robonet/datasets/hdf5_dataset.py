@@ -212,7 +212,6 @@ class HDF5VideoDataset(BaseVideoDataset):
         if not self._hparams.load_single_rand_cam:
             img_slice = _grab_cam(img_slice, self._rand_cam)
         else:
-            import pdb; pdb.set_trace()
             img_slice = img_slice[:, :, 0]
         
         inputs['images'] = tf.cast(img_slice / 255.0, img_dtype)
