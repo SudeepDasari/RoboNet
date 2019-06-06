@@ -119,7 +119,7 @@ if __name__ == '__main__':
 
     path = args.input_folder
     
-    rn = RoboNetDataset(path, [16], {'return_annotations': True, 'filters': [{'metadata/contains_annotation': True}]})
+    rn = RoboNetDataset(path, [16])
     images = rn['images']
 
     s = tf.Session()
