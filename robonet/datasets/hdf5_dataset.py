@@ -273,7 +273,7 @@ class HDF5VideoDataset(BaseVideoDataset):
             dataset = dataset.map(self._get_dict_act_img_state_annot).prefetch(100)
         else:
             dataset = tf.data.Dataset.from_generator(lambda:self._gen_hdf5(splits['train'], 'train'), (tf.float32, tf.uint8, tf.float32))
-            dataset = dataset.map(self._get_dict_act_img_state).prefetch(100)
+            dataset = dataset.map(self._get_dict_act_img_state).prefetch(1000)
         mode_datasets['train'] = dataset.make_one_shot_iterator().get_next()
 
         if self._hparams.return_annotations:
@@ -281,7 +281,7 @@ class HDF5VideoDataset(BaseVideoDataset):
             dataset = dataset.map(self._get_dict_act_img_state_annot).prefetch(100)
         else:
             dataset = tf.data.Dataset.from_generator(lambda:self._gen_hdf5(splits['val'], 'val'), (tf.float32, tf.uint8, tf.float32))
-            dataset = dataset.map(self._get_dict_act_img_state).prefetch(100)
+            dataset = dataset.map(self._get_dict_act_img_state).prefetch(10)
         mode_datasets['val'] = dataset.make_one_shot_iterator().get_next()
 
         if self._hparams.return_annotations:
@@ -289,7 +289,7 @@ class HDF5VideoDataset(BaseVideoDataset):
             dataset = dataset.map(self._get_dict_act_img_state_annot).prefetch(100)
         else:
             dataset = tf.data.Dataset.from_generator(lambda:self._gen_hdf5(splits['test'], 'test'), (tf.float32, tf.uint8, tf.float32))
-            dataset = dataset.map(self._get_dict_act_img_state).prefetch(100)
+            dataset = dataset.map(self._get_dict_act_img_state).prefetch(1)
         mode_datasets['test'] = dataset.make_one_shot_iterator().get_next()
 
         return mode_datasets
