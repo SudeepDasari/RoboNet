@@ -103,6 +103,7 @@ class RoboNetDataset(HDF5VideoDataset):
     def num_examples_per_epoch(self):
         return self._data_loader.num_examples_per_epoch
 
+
 if __name__ == '__main__':
     import imageio
     import argparse
@@ -117,13 +118,14 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     path = args.input_folder
-    rn = RoboNetDataset(path, [16])
-    images, states, actions = rn['images'], rn['states'], rn['actions']
+    
+    rn = RoboNetDataset(path, [16], {'return_annotations': True, 'filters': [{'metadata/contains_annotation': True}]})
+    images = rn['images']
 
     s = tf.Session()
     imgs = s.run(images)
-    print('images shape', imgs.shape)
 
+    print('images shape', imgs.shape)
     if args.N:
         start = time.time()
         for i in range(args.N):
@@ -135,5 +137,6 @@ if __name__ == '__main__':
     if args.debug_gif:
         path = args.debug_gif + '.gif'
         writer = imageio.get_writer(path)
-        [writer.append_data(imgs[0, t, 0].astype(np.uint8)) for t in range(imgs.shape[1])]
+        for b in range(imgs.shape[0]):
+            [writer.append_data(imgs[b, t, 0].astype(np.uint8)) for t in range(imgs.shape[1])]
         writer.close()

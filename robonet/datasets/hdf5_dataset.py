@@ -18,14 +18,15 @@ def _load_batch(assignment):
     height, width = img_dims
 
     if load_single_rand_cam:
-        ncam = 1
         rand_cam = random.randint(0, ncam - 1)
         cam_range = range(rand_cam, rand_cam + 1)
+        ncam = 1
     else:
         cam_range = range(ncam)
     
     with h5py.File(filename, 'r') as hf:
         images = np.zeros((ncam, img_T, height, width, 3), dtype=np.uint8)
+        cntr = 0
         if is_mp4:
             for n in cam_range:
                 buf = io.BytesIO(hf['env']['cam{}_video'.format(n)]['frames'][:].tostring())
@@ -35,7 +36,56 @@ def _load_batch(assignment):
                     method = cv2.INTER_CUBIC
                     if height * width < img.shape[0] * img.shape[1]:
                         method = cv2.INTER_AREA
-                    images[n, t] = cv2.resize(img[:,:,::-1], (width, height), interpolation=method)
+                    images[cntr, t] = cv2.resize(img[:,:,::-1], (width, height), interpolation=method)
+                cntr += 1
+
+        else:
+            for n in cam_range:
+                for t in range(img_T):
+                    img = cv2.imdecode(hf['env']['cam{}_video'.format(n)]['frame{}'.format(t)][:], cv2.IMREAD_COLOR)
+
+                    method = cv2.INTER_CUBIC
+                    if height * width < img.shape[0] * img.shape[1]:
+                        method = cv2.INTER_AREA
+                    images[cntr, t] = cv2.resize(img, (width, height), interpolation=method)
+                cntr += 1
+        images = np.swapaxes(images, 0, 1)
+
+        actions = hf['policy']['actions'][:].astype(np.float32)
+        states = hf['env']['state'][:].astype(np.float32)
+
+    return actions, images[:,:,:,:,::-1], states
+
+
+def _load_batch_annot(assignment):
+    filename, img_T, ncam, img_dims, is_mp4, load_single_rand_cam = assignment
+    height, width = img_dims
+    scale_height, scale_width = None, None
+
+    if load_single_rand_cam:
+        rand_cam = random.randint(0, ncam - 1)
+        cam_range = range(rand_cam, rand_cam + 1)
+        ncam = 1
+    else:
+        cam_range = range(ncam)
+    
+    with h5py.File(filename, 'r') as hf:
+        images = np.zeros((ncam, img_T, height, width, 3), dtype=np.uint8)
+        cntr = 0
+        if is_mp4:
+            for n in cam_range:
+                buf = io.BytesIO(hf['env']['cam{}_video'.format(n)]['frames'][:].tostring())
+                reader = imageio.get_reader(buf, format='mp4')
+                
+                for t, img in enumerate(reader):
+                    method = cv2.INTER_CUBIC
+                    if height * width < img.shape[0] * img.shape[1]:
+                        method = cv2.INTER_AREA
+                    if scale_height is None:
+                        scale_height, scale_width = height / float(img.shape[0]), width / float(img.shape[1])
+ 
+                    images[cntr, t] = cv2.resize(img[:,:,::-1], (width, height), interpolation=method)
+                cntr += 1
             
         else:
             for n in cam_range:
@@ -45,13 +95,29 @@ def _load_batch(assignment):
                     method = cv2.INTER_CUBIC
                     if height * width < img.shape[0] * img.shape[1]:
                         method = cv2.INTER_AREA
-                    images[n, t] = cv2.resize(img, (width, height), interpolation=method)
+                    images[cntr, t] = cv2.resize(img, (width, height), interpolation=method)
+                cntr += 1
         images = np.swapaxes(images, 0, 1)
 
         actions = hf['policy']['actions'][:].astype(np.float32)
         states = hf['env']['state'][:].astype(np.float32)
 
-    return actions, images[:,:,:,:,::-1], states
+        point_mat = hf['env']['bbox_annotations'][:].astype(np.int32)
+        annot = np.zeros((img_T, ncam, height, width, 2), dtype=np.float32)
+        for t in range(img_T):
+            for n in range(ncam):
+                for obj in range(2):
+                    chosen_cam = n
+                    if load_single_rand_cam:
+                        chosen_cam = rand_cam
+                    # [T, ncam, # objs, points per bbox, (height, width)]
+
+                    h1, w1 = point_mat[t, chosen_cam, obj, 0] * [scale_height, scale_width] - 1
+                    h2, w2 = point_mat[t, chosen_cam, obj, 1] * [scale_height, scale_width] - 1
+                    h, w = int((h1 + h2) / 2), int((w1 + w2) / 2)
+                    annot[t, n, h, w, obj] = 1
+
+    return actions, images[:,:,:,:,::-1], states, annot
 
 
 def _slice_helper(tensor, start_i, N, axis):
@@ -109,7 +175,7 @@ class HDF5VideoDataset(BaseVideoDataset):
             self._valid_keys = ['actions', 'images', 'state']
             self._parser_dtypes = [tf.float32, tf.string, tf.float32]
         
-        self._mode_datasets = self._init_queues(dataset_contents)
+        self._datasets = self._init_queues(dataset_contents)
         self._rand_start = None
         if not self._hparams.load_single_rand_cam:
             self._rand_cam = None
@@ -120,14 +186,17 @@ class HDF5VideoDataset(BaseVideoDataset):
         i, n_epochs = 0, 0
 
         while True:
-            if i + self._batch_size > len(files):
-                i, n_epochs = 0, n_epochs + 1
-                if mode == 'train' and self._hparams.num_epochs is not None and n_epochs >= self._hparams.num_epochs:
-                    break
-                self._rand.shuffle(files)
-            batch_files = files[i:i+self._batch_size]
+            batch_files = []
+            while len(batch_files) < self._batch_size:
+                batch_files.append(files[i])
+                i += 1
+                if i >= len(files):
+                    i, n_epochs = 0, n_epochs + 1
+                    if mode == 'train' and self._hparams.num_epochs is not None and n_epochs >= self._hparams.num_epochs:
+                        break
+                    self._rand.shuffle(files)
             batch_files = [(f, self._img_T, self._ncam, self._hparams.img_dims, self._is_mp4, self._hparams.load_single_rand_cam) for f in batch_files]
-            i += self._batch_size
+
             batches = p.map(_load_batch, batch_files)
             actions, images, states = [], [], []
             for b in batches:
@@ -140,23 +209,32 @@ class HDF5VideoDataset(BaseVideoDataset):
         p = multiprocessing.Pool(self._batch_size)
         files = copy.deepcopy(files)
         i, n_epochs = 0, 0
+        break_train = False
 
         while True:
-            if i + self._batch_size > len(files):
-                i, n_epochs = 0, n_epochs + 1
-                if mode == 'train' and self._hparams.num_epochs is not None and n_epochs >= self._hparams.num_epochs:
-                    break
-                self._rand.shuffle(files)
-            batch_files = files[i:i+self._batch_size]
-            batch_files = [(f, self._img_T, self._ncam, self._hparams.img_dims, self._is_mp4, self._hparams.load_single_rand_cam) for f in batch_files]
-            i += self._batch_size
+            load_files = []
+            while len(load_files) < self._batch_size:
+                load_files.append(files[i])
+                i += 1
+                if i >= len(files):
+                    i, n_epochs = 0, n_epochs + 1
+                    if mode == 'train' and self._hparams.num_epochs is not None and n_epochs >= self._hparams.num_epochs:
+                        break_train = True
+                    self._rand.shuffle(files)
+
+            if break_train:
+                break
+            
+            batch_files = [(f, self._img_T, self._ncam, self._hparams.img_dims, self._is_mp4, self._hparams.load_single_rand_cam) for f in load_files]
             batches = p.map(_load_batch_annot, batch_files)
             actions, images, states, annot = [], [], [], []
             for b in batches:
                 for value, arr in zip(b, [actions, images, states, annot]):
                     arr.append(value[None])
+
             actions, images, states, annot = [np.concatenate(arr, axis=0) for arr in [actions, images, states, annot]]
-            yield (actions, images, states, annot)
+            yield (load_files, actions, images, states, annot)
+        
     
     def _get_dict_act_img_state(self, actions, images, states):
         out_dict = self._get_dict_act_img(actions, images)
@@ -164,10 +242,10 @@ class HDF5VideoDataset(BaseVideoDataset):
         out_dict['states'] = states
         return out_dict
     
-    def _get_dict_act_img_state_annot(self, actions, images, states, annot):
+    def _get_dict_act_img_state_annot(self, fs, actions, images, states, annot):
         out_dict = self._get_dict_act_img_state(actions, images, states)
-        out_dict['pix_distrib'] = annot
-
+        out_dict['pix_distrib'] = tf.reshape(annot, [self._batch_size, self._img_T, self._hparams.img_dims[0], self._hparams.img_dims[1], 2])
+        out_dict['files'] = fs
         return out_dict
     
     def _get_dict_act_img(self, actions, images):
@@ -179,7 +257,6 @@ class HDF5VideoDataset(BaseVideoDataset):
         return {'actions': actions, 'images': tf.cast(images, tf.float32)}
     
     def _init_queues(self, hdf5_files):
-        import pdb; pdb.set_trace()
         assert len(self.MODES) == len(self._hparams.splits), "len(splits) should be the same as number of MODES!"
         split_lengths = [int(math.ceil(len(hdf5_files) * x)) for x in self._hparams.splits[1:]]
         split_lengths = np.cumsum([0, len(hdf5_files) - sum(split_lengths)] + split_lengths)
@@ -189,25 +266,38 @@ class HDF5VideoDataset(BaseVideoDataset):
         self._num_ex = len(splits['train'])
 
         mode_datasets = {}
-        for name, files in splits.items():
-            assert 'state' in self._valid_keys, "assume all records have state"
-            dataset = tf.data.Dataset.from_generator(lambda:self._gen_hdf5(files, name), (tf.float32, tf.uint8, tf.float32))
-            dataset = dataset.map(self._get_dict_act_img_state).prefetch(100)
-            iterator = dataset.make_one_shot_iterator()
-            next_element = iterator.get_next()
 
-            output_element = {}
-            for k in list(next_element.keys()):
-                output_element[k] = tf.reshape(next_element[k],
-                                               [self._batch_size] + next_element[k].get_shape().as_list()[1:])
-            
-            mode_datasets[name] = output_element
+        # DON'T USE FOR LOOPS HERE!!! IDK WHY BUT IT WILL DESTROY YOU
+        if self._hparams.return_annotations:
+            dataset = tf.data.Dataset.from_generator(lambda:self._gen_hdf5_annot(splits['train'], 'train'), (tf.string, tf.float32, tf.uint8, tf.float32, tf.float32))
+            dataset = dataset.map(self._get_dict_act_img_state_annot).prefetch(100)
+        else:
+            dataset = tf.data.Dataset.from_generator(lambda:self._gen_hdf5(splits['train'], 'train'), (tf.float32, tf.uint8, tf.float32))
+            dataset = dataset.map(self._get_dict_act_img_state).prefetch(100)
+        mode_datasets['train'] = dataset.make_one_shot_iterator().get_next()
+
+        if self._hparams.return_annotations:
+            dataset = tf.data.Dataset.from_generator(lambda:self._gen_hdf5_annot(splits['val'], 'val'), (tf.string, tf.float32, tf.uint8, tf.float32, tf.float32))
+            dataset = dataset.map(self._get_dict_act_img_state_annot).prefetch(100)
+        else:
+            dataset = tf.data.Dataset.from_generator(lambda:self._gen_hdf5(splits['val'], 'val'), (tf.float32, tf.uint8, tf.float32))
+            dataset = dataset.map(self._get_dict_act_img_state).prefetch(100)
+        mode_datasets['val'] = dataset.make_one_shot_iterator().get_next()
+
+        if self._hparams.return_annotations:
+            dataset = tf.data.Dataset.from_generator(lambda:self._gen_hdf5_annot(splits['test'], 'test'), (tf.string, tf.float32, tf.uint8, tf.float32, tf.float32))
+            dataset = dataset.map(self._get_dict_act_img_state_annot).prefetch(100)
+        else:
+            dataset = tf.data.Dataset.from_generator(lambda:self._gen_hdf5(splits['test'], 'test'), (tf.float32, tf.uint8, tf.float32))
+            dataset = dataset.map(self._get_dict_act_img_state).prefetch(100)
+        mode_datasets['test'] = dataset.make_one_shot_iterator().get_next()
+
         return mode_datasets
 
     def _get(self, key, mode):
-        assert key in self._mode_datasets[mode], "Key {} is not recognized for mode {}".format(key, mode)
-
-        return self._mode_datasets[mode][key]
+        assert key in self._datasets[mode]
+        
+        return self._datasets[mode][key]
     
     @staticmethod
     def _get_default_hparams():
