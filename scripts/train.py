@@ -49,6 +49,7 @@ def main():
     parser.add_argument("--metrics_freq", type=int, default=0, help="run and display metrics every metrics_freq step")
     parser.add_argument("--gif_freq", type=int, default=0, help="save gifs of predicted frames every gif_freq steps")
     parser.add_argument("--save_freq", type=int, default=5000, help="save model every save_freq steps, 0 to disable")
+    parser.add_argument("--use_annotations", action='store_true', help='if flag then use bbox annotations')
 
     parser.add_argument("--gpu_mem_frac", type=float, default=0, help="fraction of gpu memory to use")
     parser.add_argument("--seed", type=int)
@@ -123,18 +124,34 @@ def main():
     val_model = VideoPredictionModel(mode='val', hparams_dict=model_hparams_dict, hparams=args.model_hparams)
     batch_size = train_model.hparams.batch_size
 
-    # load datasets
     dataset_hparams_dict = json.load(open(dataset_hparams_file, 'r'))
     dataset_class = datasets.get_dataset_class(args.dataset)
-    dataset = dataset_class(args.input_dirs, batch_size, dataset_hparams_dict)
+    if args.use_annotations:
+        import copy
+        train_hparams = copy.deepcopy(dataset_hparams_dict)
+        train_hparams['filters'] = [{'metadata/contains_annotation': None}]
+        dataset = dataset_class(args.input_dirs, [batch_size], train_hparams)
 
-    with tf.variable_scope('') as training_scope:
-        inputs, targets = dataset.make_input_targets(model_hparams_dict['sequence_length'], model_hparams_dict['context_frames'], 'train')
-        train_model.build_graph(inputs, targets)
-    
-    with tf.variable_scope(training_scope, reuse=True):
-        inputs, targets = dataset.make_input_targets(model_hparams_dict['sequence_length'], model_hparams_dict['context_frames'], 'val')
-        val_model.build_graph(inputs, targets)
+        val_hparams = copy.deepcopy(dataset_hparams_dict)
+        val_hparams['return_annotations'] = True
+        val_hparams['splits'] = [0.0, 1.0, 0.0]
+        val_hparams['filters'] = [{'metadata/contains_annotation': True}]
+        val_dataset = dataset_class(args.input_dirs, [batch_size], val_hparams)
+        with tf.variable_scope('') as training_scope:
+            inputs, targets = dataset.make_input_targets(model_hparams_dict['sequence_length'], model_hparams_dict['context_frames'], 'train')
+            train_model.build_graph(inputs, targets)
+        
+    else:
+        # load datasets
+        dataset = dataset_class(args.input_dirs, batch_size, dataset_hparams_dict)
+
+        with tf.variable_scope('') as training_scope:
+            inputs, targets = dataset.make_input_targets(model_hparams_dict['sequence_length'], model_hparams_dict['context_frames'], 'train')
+            train_model.build_graph(inputs, targets)
+        
+        with tf.variable_scope(training_scope, reuse=True):
+            inputs, targets = dataset.make_input_targets(model_hparams_dict['sequence_length'], model_hparams_dict['context_frames'], 'val')
+            val_model.build_graph(inputs, targets)
 
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)

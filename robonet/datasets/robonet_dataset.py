@@ -86,7 +86,7 @@ class RoboNetDataset(HDF5VideoDataset):
         if self._filters:
             chosen_files = []
             for f in self._filters:
-                [chosen_files.extend(filtered_datasets[k]) for k in chosen_ncams if _check_filter(k, f)]
+                [chosen_files.extend(filtered_datasets[k]) for k in chosen_ncam if _check_filter(f, k)]
             self._data_loader = HDF5VideoDataset(chosen_files, self._batch_size, self._dict_copy, append_path=self._files)
         else:
             chosen_files = []

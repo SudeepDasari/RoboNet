@@ -136,10 +136,38 @@ class HDF5VideoDataset(BaseVideoDataset):
             actions, images, states = [np.concatenate(arr, axis=0) for arr in [actions, images, states]]
             yield (actions, images, states)
     
+    def _gen_hdf5_annot(self, files, mode):
+        p = multiprocessing.Pool(self._batch_size)
+        files = copy.deepcopy(files)
+        i, n_epochs = 0, 0
+
+        while True:
+            if i + self._batch_size > len(files):
+                i, n_epochs = 0, n_epochs + 1
+                if mode == 'train' and self._hparams.num_epochs is not None and n_epochs >= self._hparams.num_epochs:
+                    break
+                self._rand.shuffle(files)
+            batch_files = files[i:i+self._batch_size]
+            batch_files = [(f, self._img_T, self._ncam, self._hparams.img_dims, self._is_mp4, self._hparams.load_single_rand_cam) for f in batch_files]
+            i += self._batch_size
+            batches = p.map(_load_batch_annot, batch_files)
+            actions, images, states, annot = [], [], [], []
+            for b in batches:
+                for value, arr in zip(b, [actions, images, states, annot]):
+                    arr.append(value[None])
+            actions, images, states, annot = [np.concatenate(arr, axis=0) for arr in [actions, images, states, annot]]
+            yield (actions, images, states, annot)
+    
     def _get_dict_act_img_state(self, actions, images, states):
         out_dict = self._get_dict_act_img(actions, images)
         states = tf.reshape(states, [self._batch_size, self._state_T, self._sdim])
         out_dict['states'] = states
+        return out_dict
+    
+    def _get_dict_act_img_state_annot(self, actions, images, states, annot):
+        out_dict = self._get_dict_act_img_state(actions, images, states)
+        out_dict['pix_distrib'] = annot
+
         return out_dict
     
     def _get_dict_act_img(self, actions, images):
@@ -151,6 +179,7 @@ class HDF5VideoDataset(BaseVideoDataset):
         return {'actions': actions, 'images': tf.cast(images, tf.float32)}
     
     def _init_queues(self, hdf5_files):
+        import pdb; pdb.set_trace()
         assert len(self.MODES) == len(self._hparams.splits), "len(splits) should be the same as number of MODES!"
         split_lengths = [int(math.ceil(len(hdf5_files) * x)) for x in self._hparams.splits[1:]]
         split_lengths = np.cumsum([0, len(hdf5_files) - sum(split_lengths)] + split_lengths)
@@ -189,6 +218,7 @@ class HDF5VideoDataset(BaseVideoDataset):
         default_params.add_hparam('splits', [0.9, 0.05, 0.05])       # (train, val, test) split
         default_params.add_hparam('img_dims', (48, 64))
         default_params.add_hparam('max_start', -1)
+        default_params.add_hparam('return_annotations', False) 
         default_params.add_hparam('load_single_rand_cam', True)      # if True then only load one camera at random instead of all frames
         
         return default_params
