@@ -1,1 +1,4 @@
 *.gif
+*.pyc
+__pycache__/*
+*.egg-info/
