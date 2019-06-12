@@ -2,7 +2,11 @@ import numpy as np
 import tensorflow as tf
 from scipy import signal
 
-from robonet.video_prediction.models import vgg_network
+try:
+    from robonet.video_prediction.models import vgg_network
+except ImportError:
+    print('cant import vgg network!')
+
 from robonet.video_prediction.utils.tf_utils import PersistentOpEvaluator, with_flat_batch
 
 

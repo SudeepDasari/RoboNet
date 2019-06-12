@@ -3,54 +3,57 @@ import tensorflow as tf
 from tensorflow.contrib.training import HParams
 import glob
 import copy
+from .util.metadata_helper import load_metadata, MetaDataContainer
+import random
 
 
 class BaseVideoDataset(object):
-    MODES = ['train', 'test', 'val']
-
-    def __init__(self, files, batch_size, hparams_dict=dict(), append_path=''):
-        if isinstance(files, str):
-            if not os.path.exists(files):
-                raise FileNotFoundError('Base directory {} does not exist'.format(files))
-            self._files = append_path + files
-        else:
-            assert isinstance(files, list), "must be list of string"
-            self._files = [append_path + f for f in files]
+    def __init__(self, batch_size, path=None, metadata_frame=None, hparams=dict()):
+        if (metadata_frame is not None and path is not None) or (metadata_frame is None and path is None):
+            raise ValueError('must supply either path to files or metadata frame')
+        elif path is not None:
+            assert isinstance(path, str), "path should be string to folder containing hdf5"
+            metadata_frame = load_metadata(path)
+        elif metadata_frame is not None:
+            assert isinstance(metadata_frame, MetaDataContainer), "metadata frame type is incorrect. load from robonet.datasets.load_metadata"
         
+        # initialize hparams and store metadata_frame
+        self._hparams = self._get_default_hparams().override_from_dict(hparams)
+        self._metadata = metadata_frame
+
+        # if RNG is not supplied then initialize new RNG
+        self._random_generator = {}
+        
+        seeds = [None for _ in range(len(self.modes) + 1)]
+        if self._hparams.RNG:
+            seeds = [i + self._hparams.RNG for i in range(len(seeds))]
+        
+        for k, seed in zip(self.modes + ['base'], seeds):
+            self._random_generator[k] = random.Random(seed)
+        
+        # assign batch size to private variable
         self._batch_size = batch_size
-
-        # read dataset manifest and initialize hparams
-        self._hparams = self._get_default_hparams().override_from_dict(hparams_dict)
         
-        #initialize dataset class
-        self._init_dataset()
+        #initialize dataset
+        self._num_ex_per_epoch = self._init_dataset()
 
     def _init_dataset(self):
+        return 0
+
+    def _get(self, key, mode):
         raise NotImplementedError
 
     @staticmethod
     def _get_default_hparams():
         default_dict = {
-                        'num_epochs': None,
-                        'buffer_size': 512
-                        }
+            'RNG', 11381294392481135266
+        }
         return HParams(**default_dict)
-
-    def _get_filenames(self):
-        if isinstance(self._files, str):
-            return glob.glob(self._files + '/*.hdf5')
-        elif isinstance(self._files, (tuple, list)):
-            return self._files
-        else:
-            raise ValueError
     
     def get(self, key, mode='train'):
-        if mode not in self.MODES:
-            raise ValueError('Mode {} not valid! Dataset has following modes: {}'.format(mode, self.MODES))
+        if mode not in self.modes:
+            raise ValueError('Mode {} not valid! Dataset has following modes: {}'.format(mode, self.modes))
         return self._get(key, mode)
-    
-    def _get(self, key, mode):
-        raise NotImplementedError
 
     def __getitem__(self, item):
         if isinstance(item, tuple):
@@ -65,13 +68,30 @@ class BaseVideoDataset(object):
     def batch_size(self):
         return self._batch_size
 
-    def make_input_targets(self, n_frames, n_context, mode, img_dtype=tf.float32):
-        raise NotImplementedError
-
     @property
     def hparams(self):
         return self._hparams.values()
 
     @property
     def num_examples_per_epoch(self):
-        raise NotImplementedError
+        return self._num_ex_per_epoch
+    
+    @property
+    def modes(self):
+        return ['train', 'val', 'test']
+
+    @property
+    def rng(self):
+        return self._random_generator['base']
+
+    @property
+    def train_rng(self):
+        return self._random_generator['train']
+    
+    @property
+    def test_rng(self):
+        return self._random_generator['test']
+    
+    @property
+    def val_rng(self):
+        return self._random_generator['val']

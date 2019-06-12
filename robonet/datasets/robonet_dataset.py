@@ -1,142 +1,198 @@
-from robonet.datasets.hdf5_dataset import HDF5VideoDataset
-from robonet.datasets.save_util.filter_dataset import cached_filter_hdf5
-import copy
-import random
+from robonet.datasets.base_dataset import BaseVideoDataset
+from robonet.datasets.util.hdf5_loader import load_data, default_loader_hparams
+from tensorflow.contrib.training import HParams
+import numpy as np
 import tensorflow as tf
+import functools
+import multiprocessing
 
 
-def _check_filter(filter_dict, key_dict):
-    for k in filter_dict:
-        if filter_dict[k] != key_dict.get(k, None):
-            return False
-    return True
-
-
-def _create_assignments(batch_size, dataset_sizes):
-    assert all([isinstance(d, int) for d in dataset_sizes])
-    assert all([d > 0 for d in dataset_sizes])
-    number_chosen = sum(dataset_sizes)
-
-    batch_assignments = [max(int(batch_size / float(number_chosen) * float(d)), 1) for d in dataset_sizes]
-    diff = batch_size - sum(batch_assignments)
-    assert diff >= 0                            # due to truncation and batch_size > len(dataset_sizes), this should never happen
-    for _ in range(diff):
-        batch_assignments[random.randint(0, len(batch_assignments) - 1)] += 1
-    return batch_assignments
-
-
-def _dataset_printout(dataset_attr, batch_size):
-    print('\n\n--------------------------------------------------------------------------')
-    print('Creating sub dataset with batch size:', batch_size)
-    for k, v in dataset_attr.items():
-        if k == 'img_dim':
-            print('{}:  {} \t\t\t (before resize)'.format(k, v))
-        else:
-            print('{}:  {}'.format(k, v))
-    print('--------------------------------------------------------------------------')
-
-    
-class RoboNetDataset(HDF5VideoDataset):
-    def __init__(self, directory, sub_batch_sizes, hparams_dict=dict()):
-        assert isinstance(directory, str), "must pass directory path for this value"
-
-        hdf5_params = copy.deepcopy(hparams_dict)
-        self._filters = hdf5_params.pop('filters', [])
-        self._sub_batch_sizes = sub_batch_sizes
-        self._source_views = hdf5_params.pop('source_views', [])
-        self._ncams = hdf5_params.pop('ncams', -1)
-        self._dict_copy = hdf5_params
-
-        if self._filters:
-            assert isinstance(self._sub_batch_sizes, list)
-            batch_size = sum(self._sub_batch_sizes)
-        elif isinstance(self._sub_batch_sizes, list):
-            print('WARNING: filters not set but sub batch sizes is a list!')
-            batch_size = sum(self._sub_batch_sizes)
-        else:
-            batch_size = sub_batch_sizes
-
-        super(RoboNetDataset, self).__init__(directory, batch_size, hdf5_params)
-
+class RoboNetDataset(BaseVideoDataset):
     def _init_dataset(self):
-        assert isinstance(self._files, str), "must pass a folder path into this reader!"
-        dataset_files = self._get_filenames()
-        assert len(dataset_files) > 0, "couldn't find dataset at {}".format(self._files)
+        assert np.isclose(sum(self._hparams.splits), 1) and all([0 <= i <= 1 for i in self._hparams.splits]), "splits is invalid"
+        assert self._hparams.load_T >=0, "load_T should be non-negative!"
 
-        filtered_datasets = cached_filter_hdf5(dataset_files, '{}/filter_cache.pkl'.format(self._files))
-        # in general should iterate on the filtering scheme here
-        filt_by_ncam = {}
-        for k in filtered_datasets.keys():
-            k_ncams = k['ncam']
-            cam_list = filt_by_ncam.get(k_ncams, [])
-            cam_list.append(k)
-            filt_by_ncam[k_ncams] = cam_list
-        
-        if self._ncams == -1:
-            self._ncams = max(filt_by_ncam.keys())
-            print("loading datasets with {} cameras!".format(self._ncams))
-        elif self._ncams not in filt_by_ncam:
-            raise ValueError("no datasets with {} cameras".format(self._ncams))
-        
-        if self._source_views:
-            assert self._ncams >= max(self._source_views)
-        chosen_ncam = filt_by_ncam[self._ncams]
-        
-        dataset_batches = {}
-        if self._filters:
-            chosen_files = []
-            for f in self._filters:
-                [chosen_files.extend(filtered_datasets[k]) for k in chosen_ncam if _check_filter(f, k)]
-            self._data_loader = HDF5VideoDataset(chosen_files, self._batch_size, self._dict_copy, append_path=self._files)
+        files, min_steps = self._metadata.files, int(min(min(self._metadata.frame['img_T']), min(self._metadata.frame['state_T'])))
+        if not self._hparams.load_T:
+            self._hparams.load_T = min_steps
         else:
-            chosen_files = []
-            [chosen_files.extend(filtered_datasets[k]) for k in chosen_ncam]
-            self._data_loader = HDF5VideoDataset(chosen_files, self._batch_size, self._dict_copy, append_path=self._files)
+            assert self._hparams.load_T <= min_steps, "ask to load {} steps but some records only have {}!".format(self._hparams.min_T, min_steps)
+        self.rng.shuffle(files)
+
+        splits = np.cumsum([int(i * len(files)) for i in self._hparams.splits]).tolist()
+        # give extra fat to val set
+        if splits[-1] < len(files):
+            diff = len(files) - splits[-1]
+            for i in range(1, len(splits)):
+                splits[i] += diff 
+
+        output_format = [tf.uint8, tf.float32, tf.float32]
+        
+        if self._hparams.load_annotations:
+            output_format = output_format + [tf.float32]
+        
+        if self._hparams.ret_fnames:
+            output_format = output_format + [tf.string]
+        
+        output_format = tuple(output_format)
+
+        self._data_loaders = {}
+        # DON'T WRITE THIS SECTION WITH A FOR LOOP DUE TO BUG WITH TENSORFLOW DATASET
+        # TRAIN
+        self._train_files = []
+        if self._hparams.splits[0]:
+            self._train_files = files[:splits[0]]
+            assert len(self._train_files), "no train files"
+            train_generator = self._hdf5_generator(self._train_files, self.train_rng, 'train')
+            dataset = tf.data.Dataset.from_generator(lambda: train_generator, output_format)
+            dataset = dataset.map(self._get_dict).prefetch(1000)
+            self._data_loaders['train'] = dataset.make_one_shot_iterator().get_next()
+
+        if self._hparams.splits[1]:
+            self._val_files = files[splits[0]: splits[1]]
+            assert len(self._val_files), "no val files"
+            val_generator = self._hdf5_generator(self._val_files, self.val_rng, 'val')
+            dataset = tf.data.Dataset.from_generator(lambda: val_generator, output_format)
+            dataset = dataset.map(self._get_dict).prefetch(100)
+            self._data_loaders['val'] = dataset.make_one_shot_iterator().get_next()
+        
+        if self._hparams.splits[2]:
+            self._test_files = files[splits[1]: splits[2]]
+            assert len(self._val_files), "no test files"
+            test_generator = self._hdf5_generator(self._test_files, self.test_rng, 'test')
+            dataset = tf.data.Dataset.from_generator(lambda: test_generator, output_format)
+            dataset = dataset.map(self._get_dict).prefetch(100)
+            self._data_loaders['test'] = dataset.make_one_shot_iterator().get_next()
+
+        return len(self._train_files)
     
     def _get(self, key, mode):
-        return self._data_loader[key, mode]
-
-    def make_input_targets(self, n_frames, n_context, mode, img_dtype=tf.float32):
-        return self._data_loader.make_input_targets(n_frames, n_context, mode, img_dtype)
+        return self._data_loaders[mode][key]
     
-    @property
-    def num_examples_per_epoch(self):
-        return self._data_loader.num_examples_per_epoch
+    @staticmethod
+    def _get_default_hparams():
+        default_dict = {
+            'RNG': 11381294392481135266,
+            'splits': (0.9, 0.05, 0.05),      # train, val, test
+            'num_epochs': None,
+            'ret_fnames': False
+        }
+        for k, v in default_loader_hparams().items():
+            default_dict[k] = v
+        
+        return HParams(**default_dict)
+
+    def _hdf5_generator(self, files, rng, mode):
+        p = multiprocessing.Pool(self._batch_size)
+        i, n_epochs = 0, 0
+
+        while True:
+            file_names = []
+            while len(file_names) < self._batch_size:
+                if i >= len(files):
+                    i, n_epochs = 0, n_epochs + 1
+                    if mode == 'train' and self._hparams.num_epochs is not None and n_epochs >= self._hparams.num_epochs:
+                        break
+                    rng.shuffle(files)
+                file_names.append(files[i])
+                i += 1
+            map_fn = functools.partial(load_data, hparams=self._hparams, rng=rng)
+            batch_files = [(f, self._metadata.get_file_metadata(f)) for f in file_names]
+
+            batches = p.map(map_fn, batch_files)
+            ret_vals = []
+            for i, b in enumerate(batches):
+                if i == 0:
+                    for value in b:
+                        ret_vals.append([value[None]])
+                else:
+                    for v_i, value in enumerate(b):
+                        ret_vals[v_i].append(value[None])
+            ret_vals = [np.concatenate(v) for v in ret_vals]
+            if self._hparams.ret_fnames:
+                ret_vals = ret_vals + [file_names]
+            yield tuple(ret_vals)
+
+    def _get_dict(self, *args):
+        if self._hparams.ret_fnames and self._hparams.load_annotations:
+            images, actions, states, annotations, f_names = args
+        elif self._hparams.ret_fnames:
+            images, actions, states, f_names = args
+        elif self._hparams.load_annotations:
+            images, actions, states, annotations = args
+        else:
+            images, actions, states = args
+        
+        out_dict = {}
+        height, width = self._hparams.img_size
+        
+        if self._hparams.load_random_cam:
+            ncam = 1
+        else:
+            ncam = len(self._hparams.cams_to_load)
+        
+        shaped_images = tf.reshape(images, [self.batch_size, self._hparams.load_T, ncam, height, width, 3])
+        out_dict['images'] = tf.cast(shaped_images, tf.float32) / 255.0
+        out_dict['actions'] = tf.reshape(actions, [self.batch_size, self._hparams.load_T - 1, self._hparams.target_adim])
+        out_dict['states'] = tf.reshape(states, [self.batch_size, self._hparams.load_T, self._hparams.target_sdim])
+
+        if self._hparams.load_annotations:
+            out_dict['annotations'] = tf.reshape(annotations, [self._batch_size, self._hparams.load_T, ncam, height, width, 2])
+        if self._hparams.ret_fnames:
+            out_dict['f_names'] = f_names
+        
+        return out_dict
+
+
+def _timing_test(N, path, batch_size):
+    import time
+    loader = RoboNetDataset(batch_size, path)
+    tensors = [loader[x] for x in ['images', 'states', 'actions']]
+    s = tf.Session()
+
+    timings = []
+    for i in range(N):
+        start = time.time()
+        s.run(tensors)
+        timings.append(time.time() - start)
+
+        print('run {} took {} seconds'.format(i, timings[-1]))
+    print('runs took on average {} seconds'.format(sum(timings) / len(timings)))
 
 
 if __name__ == '__main__':
-    import imageio
     import argparse
-    import time
-    import numpy as np
+    import pdb
 
-
-    parser = argparse.ArgumentParser(description="converts dataset from pkl format to hdf5")
-    parser.add_argument('input_folder', type=str, help='folder containing hdf5 files')
-    parser.add_argument('--N', type=int, help='number of timing tests to run', default=10)
-    parser.add_argument('--debug_gif', type=str, help='saves debug gif at given path if desired', default='')
+    parser = argparse.ArgumentParser(description="calculates or loads meta_data frame")
+    parser.add_argument('path', help='path to files containing hdf5 dataset')
+    parser.add_argument('--batch_size', type=int, default=10, help='batch size for test loader')
+    parser.add_argument('--time_test', type=int, default=0, help='if value provided will run N timing tests')
+    parser.add_argument('--load_steps', type=int, default=0, help='if value is provided will load <load_steps> steps')
+    parser.add_argument('--load_annotations', action='store_true', help='tests annotation loading')
     args = parser.parse_args()
-
-    path = args.input_folder
     
-    rn = RoboNetDataset(path, [16])
-    images = rn['images']
+    if args.time_test:
+        _timing_test(args.time_test, args.path, args.batch_size)
+        exit(0)
 
+    hparams = {'ret_fnames': True, 'load_T': args.load_steps}
+    if args.load_annotations:
+        from robonet.datasets import load_metadata
+        meta_data = load_metadata(args.path)
+        meta_data = meta_data[meta_data['contains_annotation'] == True]
+        hparams['load_annotations'] = True
+        hparams['splits'] = [0.8, 0.1, 0.1]
+
+        loader = RoboNetDataset(args.batch_size, metadata_frame=meta_data, hparams=hparams)
+        tensors = [loader[x] for x in ['images', 'states', 'actions', 'annotations', 'f_names']]
+        tensors = tensors + [loader[x, 'val'] for x in ['images', 'states', 'actions', 'annotations', 'f_names']]
+        tensors = tensors + [loader[x, 'test'] for x in ['images', 'states', 'actions', 'annotations', 'f_names']]
+    else:
+        loader = RoboNetDataset(args.batch_size, args.path, hparams=hparams)
+        tensors = [loader[x] for x in ['images', 'states', 'actions', 'f_names']]
     s = tf.Session()
-    imgs = s.run(images)
+    out_tensors = s.run(tensors)
 
-    print('images shape', imgs.shape)
-    if args.N:
-        start = time.time()
-        for i in range(args.N):
-            b_start = time.time()
-            imgs = s.run(images)
-            print('load {} was {} seconds'.format(i, time.time() - b_start))
-        end = time.time()
-        print('loading took {} seconds on average!'.format((end - start) / float(args.N)))
-    if args.debug_gif:
-        path = args.debug_gif + '.gif'
-        writer = imageio.get_writer(path)
-        for b in range(imgs.shape[0]):
-            [writer.append_data(imgs[b, t, 0].astype(np.uint8)) for t in range(imgs.shape[1])]
-        writer.close()
+    pdb.set_trace()
+    print('done testing!')
