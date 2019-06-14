@@ -121,7 +121,7 @@ def load_annotations(file_pointer, metadata, hparams, cams_to_load):
 
     for t in range(metadata['img_T']):
         for n, chosen_cam in enumerate(cams_to_load):
-            for obj in range(2):
+            for obj in range(point_mat.shape[2]):
                 h1, w1 = point_mat[t, chosen_cam, obj, 0] * [scale_height, scale_width] - 1
                 h2, w2 = point_mat[t, chosen_cam, obj, 1] * [scale_height, scale_width] - 1
                 h, w = int((h1 + h2) / 2), int((w1 + w2) / 2)
