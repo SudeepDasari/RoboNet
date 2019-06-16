@@ -18,6 +18,11 @@ class MetaDataContainer:
         fname = fname.split('/')[-1]
         return self._meta_data.loc[fname]
 
+    def select_objects(self, obj_class_name):
+        if isinstance(obj_class_name, str):
+            return self._meta_data[[obj_class_name in x for x in self._meta_data['object_classes']]]
+        return self._meta_data[[set(obj_class_name) == set(x) for x in self._meta_data['object_classes']]]
+
     @property
     def frame(self):
         return self._meta_data
