@@ -8,18 +8,18 @@ import random
 
 
 class BaseVideoDataset(object):
-    def __init__(self, batch_size, path=None, metadata_frame=None, hparams=dict()):
-        if (metadata_frame is not None and path is not None) or (metadata_frame is None and path is None):
+    def __init__(self, batch_size, path=None, metadata=None, hparams=dict()):
+        if (metadata is not None and path is not None) or (metadata is None and path is None):
             raise ValueError('must supply either path to files or metadata frame')
         elif path is not None:
             assert isinstance(path, str), "path should be string to folder containing hdf5"
-            metadata_frame = load_metadata(path)
-        elif metadata_frame is not None:
-            assert isinstance(metadata_frame, MetaDataContainer), "metadata frame type is incorrect. load from robonet.datasets.load_metadata"
+            metadata = load_metadata(path)
+        elif metadata is not None:
+            assert isinstance(metadata, MetaDataContainer), "metadata frame type is incorrect. load from robonet.datasets.load_metadata"
         
         # initialize hparams and store metadata_frame
         self._hparams = self._get_default_hparams().override_from_dict(hparams)
-        self._metadata = metadata_frame
+        self._metadata = metadata
 
         # if RNG is not supplied then initialize new RNG
         self._random_generator = {}

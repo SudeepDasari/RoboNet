@@ -18,6 +18,19 @@ IMAGE_SUMMARIES = "image_summaries"
 EVAL_SUMMARIES = "eval_summaries"
 
 
+def build_optimizer(lr, beta1, beta2, decay_steps=(), end_lr=None, global_step=None):
+    if global_step is None:
+        global_step = tf.train.get_or_create_global_step()
+    if any(decay_steps):
+        lr, end_lr = lr, end_lr
+        start_step, end_step = decay_steps
+        step = tf.clip_by_value(global_step, start_step, end_step)
+        learning_rate = lr + (end_lr - lr) * tf.to_float(step - start_step) / tf.to_float(end_step - start_step)
+    else:
+        learning_rate = lr
+    return learning_rate, tf.train.AdamOptimizer(learning_rate, beta1, beta2)
+
+
 def local_device_setter(num_devices=1,
                         ps_device_type='cpu',
                         worker_device='/cpu:0',

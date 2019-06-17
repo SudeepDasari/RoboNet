@@ -1,0 +1,5 @@
+{
+    "dataset": "RoboNet",
+    "buffer_size":256,
+    "load_T": 15
+}

@@ -45,7 +45,7 @@ class RoboNetDataset(BaseVideoDataset):
             assert len(self._train_files), "no train files"
             train_generator = self._hdf5_generator(self._train_files, self.train_rng, 'train')
             dataset = tf.data.Dataset.from_generator(lambda: train_generator, output_format)
-            dataset = dataset.map(self._get_dict).prefetch(1000)
+            dataset = dataset.map(self._get_dict).prefetch(self._hparams.buffer_size)
             self._data_loaders['train'] = dataset.make_one_shot_iterator().get_next()
 
         if self._hparams.splits[1]:
@@ -53,7 +53,7 @@ class RoboNetDataset(BaseVideoDataset):
             assert len(self._val_files), "no val files"
             val_generator = self._hdf5_generator(self._val_files, self.val_rng, 'val')
             dataset = tf.data.Dataset.from_generator(lambda: val_generator, output_format)
-            dataset = dataset.map(self._get_dict).prefetch(100)
+            dataset = dataset.map(self._get_dict).prefetch(max(int(self._hparams.buffer_size / 10), 1))
             self._data_loaders['val'] = dataset.make_one_shot_iterator().get_next()
         
         if self._hparams.splits[2]:
@@ -61,21 +61,22 @@ class RoboNetDataset(BaseVideoDataset):
             assert len(self._val_files), "no test files"
             test_generator = self._hdf5_generator(self._test_files, self.test_rng, 'test')
             dataset = tf.data.Dataset.from_generator(lambda: test_generator, output_format)
-            dataset = dataset.map(self._get_dict).prefetch(100)
+            dataset = dataset.map(self._get_dict).prefetch(max(int(self._hparams.buffer_size / 10), 1))
             self._data_loaders['test'] = dataset.make_one_shot_iterator().get_next()
 
         return len(self._train_files)
     
     def _get(self, key, mode):
         return self._data_loaders[mode][key]
-    
+
     @staticmethod
     def _get_default_hparams():
         default_dict = {
             'RNG': 11381294392481135266,
             'splits': (0.9, 0.05, 0.05),      # train, val, test
             'num_epochs': None,
-            'ret_fnames': False
+            'ret_fnames': False,
+            "buffer_size": 1000
         }
         for k, v in default_loader_hparams().items():
             default_dict[k] = v

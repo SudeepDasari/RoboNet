@@ -1,1 +1,0 @@
-python scripts/train.py --input_dirs /home/sudeep/Documents/ext_data/five_view_dataset/ --experiment_dir robonet_experiments/sawyer/ --logs_dir /home/sudeep/Desktop/test/

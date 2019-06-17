@@ -3,7 +3,7 @@ import tensorflow as tf
 from scipy import signal
 
 try:
-    from robonet.video_prediction.models import vgg_network
+    from robonet.video_prediction.layers import vgg_network
 except ImportError:
     print('cant import vgg network!')
 

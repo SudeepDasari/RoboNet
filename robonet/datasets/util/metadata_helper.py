@@ -67,6 +67,9 @@ class MetaDataContainer:
 
     def keys(self):
         return self._meta_data.keys()
+    
+    def __len__(self):
+        return len(self._meta_data)
 
 
 def load_metadata_dict(fname):

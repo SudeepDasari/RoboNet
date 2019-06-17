@@ -109,7 +109,7 @@ def load_actions(file_pointer, meta_data, hparams):
         return file_pointer['policy']['actions'][:][:, :adim]
 
     else:
-        raise ValueError("file sdim - {}, target sdim - {}, pad behavior - {}".format(sdim, hparams.target_sdim, hparams.state_mismatch))
+        raise ValueError("file adim - {}, target adim - {}, pad behavior - {}".format(adim, hparams.target_adim, hparams.action_mismatch))
 
 
 def load_annotations(file_pointer, metadata, hparams, cams_to_load):
