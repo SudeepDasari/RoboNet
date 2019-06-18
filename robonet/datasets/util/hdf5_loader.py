@@ -5,6 +5,7 @@ import io
 import hashlib
 import numpy as np
 import os
+import random
 
 
 class ACTION_MISMATCH:
@@ -129,8 +130,14 @@ def load_annotations(file_pointer, metadata, hparams, cams_to_load):
     return annot
 
 
-def load_data(file_metadata_tuple, hparams, rng):
-    f_name, file_metadata = file_metadata_tuple
+def load_data(inputs, hparams):
+    if len(inputs) == 2:
+        f_name, file_metadata = inputs
+        rng = None
+    else:
+        rng, f_name, file_metadata = inputs
+    rng = random.Random(rng)
+
     assert os.path.exists(f_name) and os.path.isfile(f_name), "invalid f_name"
     buf = open(f_name, 'rb').read()
     assert hashlib.sha256(buf).hexdigest() == file_metadata['sha256'], "file hash doesn't match meta-data"
@@ -191,9 +198,9 @@ if __name__ == '__main__':
         hparams.load_annotations = True
         print(meta_data[meta_data['contains_annotation'] == True])
         meta_data = meta_data[meta_data['contains_annotation'] == True]
-        imgs, actions, states, annot = load_data((args.file, meta_data.get_file_metadata(args.file)), hparams, random.Random())
+        imgs, actions, states, annot = load_data((args.file, meta_data.get_file_metadata(args.file)), hparams)
     else:
-        imgs, actions, states = load_data((args.file, meta_data.get_file_metadata(args.file)), hparams, random.Random())
+        imgs, actions, states = load_data((args.file, meta_data.get_file_metadata(args.file)), hparams)
     
     print('actions', actions.shape)
     print('states', states.shape)

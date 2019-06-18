@@ -85,20 +85,26 @@ class RoboNetDataset(BaseVideoDataset):
 
     def _hdf5_generator(self, files, rng, mode):
         p = multiprocessing.Pool(self._batch_size)
-        i, n_epochs = 0, 0
+        file_index, n_epochs = 0, 0
 
         while True:
             file_names = []
             while len(file_names) < self._batch_size:
-                if i >= len(files):
-                    i, n_epochs = 0, n_epochs + 1
+                if file_index >= len(files):
+                    file_index, n_epochs = 0, n_epochs + 1
                     if mode == 'train' and self._hparams.num_epochs is not None and n_epochs >= self._hparams.num_epochs:
                         break
                     rng.shuffle(files)
-                file_names.append(files[i])
-                i += 1
-            map_fn = functools.partial(load_data, hparams=self._hparams, rng=rng)
-            batch_files = [(f, self._metadata.get_file_metadata(f)) for f in file_names]
+                file_names.append(files[file_index])
+                file_index += 1
+            
+            if self._hparams.RNG:
+                rng_seeds = [rng.getrandbits(64) for _ in range(self._batch_size)]
+            else:
+                rng_seeds = [None for _ in range(self._batch_size)]
+
+            map_fn = functools.partial(load_data, hparams=self._hparams)
+            batch_files = [(b_seed, f, self._metadata.get_file_metadata(f)) for b_seed, f in zip(rng_seeds, file_names)]
 
             batches = p.map(map_fn, batch_files)
             ret_vals = []
