@@ -19,8 +19,7 @@ def json_try_load(fname):
 
 
 def trial_str_creator(trial):
-    # customize the name here
-    return "{}_{}_123".format(trial.trainable_name, trial.trial_id)
+    return "{}_{}".format(str(trial), trial.trial_id)
 
 
 if __name__ == '__main__':
@@ -44,7 +43,7 @@ if __name__ == '__main__':
 
     
     exp = tune.Experiment(
-                name="video_prediction_training",
+                name="{}_video_prediction_training".format(os.getlogin()),
                 run=VPredTrainable,
                 trial_name_creator=tune.function(trial_str_creator),
                 loggers=[GIFLogger],
