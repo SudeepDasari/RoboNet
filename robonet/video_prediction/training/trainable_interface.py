@@ -12,7 +12,6 @@ class VPredTrainable(Trainable):
         dataset_hparams, model_hparams, graph_type, n_gpus = self._extract_hparams(config)
         self._config, self._dataset_hparams, self._model_hparams = config, dataset_hparams, model_hparams
         DatasetClass, model_fn = get_dataset_class(dataset_hparams.pop('dataset')), get_model_fn(model_hparams.pop('model'))
-    
         metadata = self._filter_metadata(load_metadata(config['data_directory']))
         dataset = DatasetClass(config.pop('batch_size'), metadata=metadata, hparams=dataset_hparams)
 
@@ -30,6 +29,10 @@ class VPredTrainable(Trainable):
         """
         dataset_hparams, model_hparams = config.pop('dataset_hparams', {}), config.pop('model_hparams', {})
         graph_type = model_hparams.pop('graph')
+
+        if 'train_frac' in config:
+            train_frac = config['train_frac']
+            dataset_hparams['splits'] = [train_frac, 0.95 - train_frac, 0.05]
 
         self._val_summary_freq = config.get('val_summary_freq', 100)
         self._image_summary_freq = config.get('image_summary_freq', 5000)

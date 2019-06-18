@@ -7,6 +7,7 @@ from robonet.video_prediction.training import GIFLogger, VPredTrainable
 import json
 import os
 import tensorflow as tf
+import ray
 import ray.tune as tune
 
 
@@ -37,9 +38,11 @@ if __name__ == '__main__':
     config = {'dataset_hparams': dataset_hparams,
               'model_hparams': model_hparams,
               'n_gpus': 1,
+              'train_frac': tune.grid_search([0.9, 0.05]),
               'data_directory': args.input_dir,
               'batch_size': 16}
 
+    
     exp = tune.Experiment(
                 name="video_prediction_training",
                 run=VPredTrainable,
@@ -48,4 +51,8 @@ if __name__ == '__main__':
                 config=config,
                 resources_per_trial= {"cpu": 10, "gpu": 1},
                 checkpoint_freq=args.save_freq)
+    
+    redis_address = ray.services.get_node_ip_address() + ':6379'
+    ray.init(redis_address=redis_address)
+
     trials = tune.run(exp, queue_trials=True)
