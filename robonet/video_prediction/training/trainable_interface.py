@@ -4,6 +4,7 @@ from robonet.datasets import get_dataset_class, MultiplexedTensors, load_metadat
 from robonet.video_prediction.models import get_model_fn
 from robonet.video_prediction.utils import tf_utils
 import numpy as np
+import os
 
 
 class VPredTrainable(Trainable):
