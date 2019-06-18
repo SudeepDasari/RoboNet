@@ -12,8 +12,10 @@ class VPredTrainable(Trainable):
         dataset_hparams, model_hparams, graph_type, n_gpus = self._extract_hparams(config)
         self._config, self._dataset_hparams, self._model_hparams = config, dataset_hparams, model_hparams
         DatasetClass, model_fn = get_dataset_class(dataset_hparams.pop('dataset')), get_model_fn(model_hparams.pop('model'))
+
         metadata = self._filter_metadata(load_metadata(config['data_directory']))
         dataset = DatasetClass(config.pop('batch_size'), metadata=metadata, hparams=dataset_hparams)
+        print('loaded dataset!')
 
         inputs, targets = self._get_input_targets(dataset)
         self._estimator = model_fn(n_gpus, graph_type, inputs, targets, tf.estimator.ModeKeys.TRAIN, model_hparams)

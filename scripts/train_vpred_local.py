@@ -53,6 +53,7 @@ if __name__ == '__main__':
                 checkpoint_freq=args.save_freq)
     
     redis_address = ray.services.get_node_ip_address() + ':6379'
+    print('init ray on {}'.format(redis_address))
     ray.init(redis_address=redis_address)
 
     trials = tune.run(exp, queue_trials=True)
