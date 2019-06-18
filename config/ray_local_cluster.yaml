@@ -1,0 +1,30 @@
+cluster_name: default
+min_workers: 0
+max_workers: 0
+docker:
+    image: ""
+    container_name: ""
+target_utilization_fraction: 0.8
+idle_timeout_minutes: 5
+provider:
+    type: local
+    head_ip: deepthought
+    worker_ips: [newton5]
+auth:
+    ssh_user: sudeep
+    ssh_private_key: ~/.ssh/id_rsa
+head_node: {}
+worker_nodes: {}
+file_mounts: {}
+head_setup_commands: []
+worker_setup_commands: []
+initialization_commands: []
+setup_commands:
+    - source ~/rayrc && cd ~/Documents/RoboNet && git checkout ray && git pull origin ray
+#    - source activate ray && cd ray/python && pip install -e .
+head_start_ray_commands:
+    - source ~/rayrc && ray stop
+    - source ~/rayrc && ulimit -c unlimited && ray start --head --redis-port=6379 --autoscaling-config=~/ray_bootstrap_config.yaml
+worker_start_ray_commands:
+    - source ~/rayrc && ray stop
+    - source ~/rayrc && ray start --redis-address=$RAY_HEAD_IP:6379
