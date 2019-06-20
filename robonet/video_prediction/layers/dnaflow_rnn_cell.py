@@ -223,6 +223,9 @@ class VPredCell(tf.nn.rnn_cell.RNNCell):
             output_size['zat_mu'] = self.hparams.za_dim
             output_size['zat_log_sigma_sq'] = self.hparams.za_dim
             output_size['gen_actions'] = inputs['actions'].shape[-1].value
+        if 'zr_mu' in inputs and 'zr_log_sigma_sq' in inputs:
+            output_size['zr_mu'] = self.hparams.zr_dim
+            output_size['zr_log_sigma_sq'] = self.hparams.zr_dim
         if self.hparams.transformation == 'flow':
             output_size['gen_flows'] = tf.TensorShape([height, width, 2, self.hparams.last_frames * self.hparams.num_transformed_images])
             output_size['gen_flows_rgb'] = tf.TensorShape([height, width, 3, self.hparams.last_frames * self.hparams.num_transformed_images])
@@ -586,6 +589,9 @@ class VPredCell(tf.nn.rnn_cell.RNNCell):
             outputs['zat_mu'] = zat_mu
             outputs['zat_log_sigma_sq'] = zat_log_sigma_sq
             outputs['gen_actions'] = gen_action
+        if 'zr_mu' in inputs and 'zr_log_sigma_sq' in inputs:
+            outputs['zr_mu'] = inputs['zr_mu']
+            outputs['zr_log_sigma_sq'] = inputs['zr_log_sigma_sq']
         if self.hparams.transformation == 'flow':
             outputs['gen_flows'] = flows
             flows_transposed = tf.transpose(flows, [0, 1, 2, 4, 3])

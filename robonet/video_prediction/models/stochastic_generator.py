@@ -9,6 +9,8 @@ from tensorflow.contrib.training import HParams
 import logging
 from collections import OrderedDict
 from robonet.video_prediction import losses
+from robonet.video_prediction.ops import lrelu, dense, pad2d, conv2d, conv_pool2d, flatten, tile_concat, pool2d, get_norm_layer
+from tensorflow.python.util import nest
 
 
 def loss_default_hparams(graph_class):
@@ -26,8 +28,67 @@ def loss_default_hparams(graph_class):
         'state_weight': 0.0,
         'tv_weight': 0.001,
         'action_weight': 1.0,
-        'zat_kl_weight': 0.001
+        'zat_kl_weight': 0.001,
+        'zr_kl_weight': 0.001   # if nonzero, model infers zr from image pairs and actions (if we want to generalize to new domain at test time)
+                                # otherwise, model maintains independent zrs (no generalization to new domain at test time)
     }
+
+
+def create_n_layer_encoder(inputs,
+                           nz=8,
+                           nef=64,
+                           n_layers=3,
+                           norm_layer='instance',
+                           include_top=True):
+    norm_layer = get_norm_layer(norm_layer)
+    layers = []
+    paddings = [[0, 0], [1, 1], [1, 1], [0, 0]]
+
+    with tf.variable_scope("layer_1"):
+        convolved = conv2d(tf.pad(inputs, paddings), nef, kernel_size=4, strides=2, padding='VALID')
+        rectified = lrelu(convolved, 0.2)
+        layers.append(rectified)
+
+    for i in range(1, n_layers):
+        with tf.variable_scope("layer_%d" % (len(layers) + 1)):
+            out_channels = nef * min(2**i, 4)
+            convolved = conv2d(tf.pad(layers[-1], paddings), out_channels, kernel_size=4, strides=2, padding='VALID')
+            normalized = norm_layer(convolved)
+            rectified = lrelu(normalized, 0.2)
+            layers.append(rectified)
+
+    pooled = pool2d(rectified, rectified.shape[1:3].as_list(), padding='VALID', pool_mode='avg')
+    squeezed = tf.squeeze(pooled, [1, 2])
+
+    if include_top:
+        with tf.variable_scope('z_mu'):
+            z_mu = dense(squeezed, nz)
+        with tf.variable_scope('z_log_sigma_sq'):
+            z_log_sigma_sq = dense(squeezed, nz)
+            z_log_sigma_sq = tf.clip_by_value(z_log_sigma_sq, -10, 10)
+        outputs = {'enc_zs_mu': z_mu, 'enc_zs_log_sigma_sq': z_log_sigma_sq}
+    else:
+        outputs = squeezed
+    return outputs
+
+
+def create_encoder(inputs, nz):
+    assert inputs.shape.ndims == 5
+    batch_shape = inputs.shape[:-3].as_list()
+    inputs = flatten(inputs, 0, len(batch_shape) - 1)
+    unflatten = lambda x: tf.reshape(x, batch_shape + x.shape.as_list()[1:])
+    outputs = create_n_layer_encoder(inputs, nz=nz)
+    outputs = nest.map_structure(unflatten, outputs)
+    return outputs
+
+
+def encoder_fn(inputs, targets, hparams=None):
+    image_pairs = tf.concat([inputs['images'], targets['images']], axis=-1)
+    if 'actions' in inputs:
+        image_pairs = tile_concat([image_pairs,
+                                   tf.expand_dims(tf.expand_dims(inputs['actions'], axis=-2), axis=-2)], axis=-1)
+    outputs = create_encoder(image_pairs, nz=hparams.zr_dim)
+    return outputs
 
 
 def vpred_generator(num_gpus, graph_type, inputs, targets, mode, params):
@@ -36,9 +97,13 @@ def vpred_generator(num_gpus, graph_type, inputs, targets, mode, params):
     graph_class = get_graph_class(graph_type)
     default_hparams = dict(itertools.chain(graph_class.default_hparams().items(), loss_default_hparams(graph_class).items()))
     hparams = HParams(**default_hparams).override_from_dict(params)
-    
+
     # prep inputs here
     inputs['actions'], inputs['images'] = tf.transpose(inputs['actions'], [1, 0, 2]), tf.transpose(inputs['images'], [1, 0, 2, 3, 4])
+    if hparams.zr_kl_weight:
+        outputs_enc = encoder_fn(inputs, {'images': tf.transpose(targets['images'][:, 1:], [1, 0, 2, 3, 4])}, hparams)
+    else:
+        outputs_enc = None
     targets['images'] = tf.transpose(targets['images'][:, hparams.context_frames:], [1, 0, 2, 3, 4])
     if hparams.use_states:
         inputs['states'] = tf.transpose(inputs['states'][:, hparams.context_frames:], [1, 0, 2])
@@ -52,7 +117,7 @@ def vpred_generator(num_gpus, graph_type, inputs, targets, mode, params):
     # build the graph
     model_graph = graph_class()
     if num_gpus == 1:
-        outputs = model_graph.build_graph(inputs, hparams)
+        outputs = model_graph.build_graph(inputs, hparams, outputs_enc=outputs_enc)
     else:
         # TODO: add multi-gpu evaluation support
         raise NotImplementedError
@@ -115,7 +180,10 @@ def vpred_generator(num_gpus, graph_type, inputs, targets, mode, params):
             gen_losses["gen_action_loss"] = (gen_action_loss, hparams.action_weight)
         if hparams.zat_kl_weight:   # TODO: add annealing
             gen_zat_kl_loss = losses.kl_loss(outputs['zat_mu'], outputs['zat_log_sigma_sq'])
-            gen_losses["gen_zat_kl_loss"] = (gen_zat_kl_loss, hparams.zat_kl_weight)  # possibly annealed kl_weight
+            gen_losses["zat_kl_loss"] = (gen_zat_kl_loss, hparams.zat_kl_weight)  # possibly annealed kl_weight
+        if hparams.zr_kl_weight:    # TODO: add annealing
+            gen_zr_kl_loss = losses.kl_loss(outputs['zr_mu'], outputs['zr_log_sigma_sq'])
+            gen_losses["gen_zr_kl_loss"] = (gen_zr_kl_loss, hparams.zr_kl_weight)  # possibly annealed kl_weight
 
         loss = sum(loss * weight for loss, weight in gen_losses.values())
         g_gradvars = optimizer.compute_gradients(loss, var_list=model_graph.vars)

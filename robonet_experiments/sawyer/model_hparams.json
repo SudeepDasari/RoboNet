@@ -1,5 +1,5 @@
 {
-    "model": "indep_zr",
+    "model": "stochastic",
     "graph": "c_dna_flow",
     "lr": 0.001,
     "end_lr": 0.0,
