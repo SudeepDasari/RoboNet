@@ -21,6 +21,7 @@ class VPredTrainable(Trainable):
             inputs, targets = self._get_input_targets(dataset)
         else:
             self._tensor_multiplexers = []
+            self._input_images = []
             batch_size = config.pop('batch_size')
             input_images, input_actions, input_states, target_images, target_states = [], [], [], [], []
 
@@ -92,7 +93,8 @@ class VPredTrainable(Trainable):
         inputs, targets = {'actions': actions}, {}
         for k, v in zip(['states', 'images'], [states, images]):
             inputs[k], targets[k] = v[:, :-1], v
-        self._input_images = inputs['images']
+        # self._input_images = inputs['images']
+        self._input_images.append(inputs['images'])
         return inputs, targets
 
     def _train(self):
@@ -100,7 +102,7 @@ class VPredTrainable(Trainable):
         
         # no need to increment itr since global step is incremented by train_op
         loss, train_op, predicted = self._estimator.loss, self._estimator.train_op, self._estimator.predictions
-        input_images = self._input_images
+        input_images = tf.concat(self._input_images, axis=0)
         
         fetches = {'global_step': itr}
         # fetches['metric/train/loss'] = self.sess.run([loss, train_op], feed_dict=self._tensor_multiplexer.train)[0]
