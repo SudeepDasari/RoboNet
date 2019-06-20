@@ -15,10 +15,39 @@ class VPredTrainable(Trainable):
         DatasetClass, model_fn = get_dataset_class(dataset_hparams.pop('dataset')), get_model_fn(model_hparams.pop('model'))
 
         metadata = self._filter_metadata(load_metadata(config['data_directory']))
-        dataset = DatasetClass(config.pop('batch_size'), metadata=metadata, hparams=dataset_hparams)
-        print('loaded dataset!')
+        if model_hparams['num_domains'] == 1:
+            dataset = DatasetClass(config.pop('batch_size'), metadata=metadata, hparams=dataset_hparams)
+            print('loaded dataset!')
+            inputs, targets = self._get_input_targets(dataset)
+        else:
+            self._tensor_multiplexers = []
+            batch_size = config.pop('batch_size')
+            input_images, input_actions, input_states, target_images, target_states = [], [], [], [], []
 
-        inputs, targets = self._get_input_targets(dataset)
+            for i in range(model_hparams['num_domains']):
+                mod_metadata = metadata[metadata['camera_configuration'] == 'sudri{}'.format(i)]
+                dataset = DatasetClass(batch_size, metadata=mod_metadata, hparams=dataset_hparams)
+                print('loaded dataset!')
+
+                inputs, targets = self._get_input_targets(dataset)
+                input_images.append(inputs['images'])
+                input_actions.append(inputs['actions'])
+                input_states.append(inputs['states'])
+                target_images.append(targets['images'])
+                target_states.append(targets['states'])
+
+            input_images = tf.concat(input_images, axis=0)
+            input_actions = tf.concat(input_actions, axis=0)
+            input_states = tf.concat(input_states, axis=0)
+            target_images = tf.concat(target_images, axis=0)
+            target_states = tf.concat(target_states, axis=0)
+            inputs = {'images': input_images, 'actions': input_actions, 'states': input_states}
+            targets = {'images': target_images, 'states': target_states}
+
+            self._train_feed_dict, self._val_feed_dict = {}, {}
+            for t in self._tensor_multiplexers:
+                self._train_feed_dict.update(t.train)
+                self._val_feed_dict.update(t.val)
         self._estimator = model_fn(n_gpus, graph_type, inputs, targets, tf.estimator.ModeKeys.TRAIN, model_hparams)
 
         self._global_step = tf.train.get_or_create_global_step()
@@ -53,8 +82,11 @@ class VPredTrainable(Trainable):
     
     def _get_input_targets(self, data_loader):
         assert data_loader.hparams.get('load_random_cam', False), "function assumes loader will grab one random camera feed in multi-cam object"
-        self._tensor_multiplexer = MultiplexedTensors(data_loader, ['images', 'actions', 'states'])
-        images, actions, states = [self._tensor_multiplexer[k] for k in ['images', 'actions', 'states']]
+        # self._tensor_multiplexer = MultiplexedTensors(data_loader, ['images', 'actions', 'states'])
+        # images, actions, states = [self._tensor_multiplexer[k] for k in ['images', 'actions', 'states']]
+        t = MultiplexedTensors(data_loader, ['images', 'actions', 'states'])
+        images, actions, states = [t[k] for k in ['images', 'actions', 'states']]
+        self._tensor_multiplexers.append(t)
         images = images[:, :, 0]          # grab cam 0
         
         inputs, targets = {'actions': actions}, {}
@@ -71,16 +103,19 @@ class VPredTrainable(Trainable):
         input_images = self._input_images
         
         fetches = {'global_step': itr}
-        fetches['metric/train/loss'] = self.sess.run([loss, train_op], feed_dict=self._tensor_multiplexer.train)[0]
+        # fetches['metric/train/loss'] = self.sess.run([loss, train_op], feed_dict=self._tensor_multiplexer.train)[0]
+        fetches['metric/train/loss'] = self.sess.run([loss, train_op], feed_dict=self._train_feed_dict)[0]
         
         if itr % self._image_summary_freq == 0:
-            for name, fetch in zip(['train', 'val'], [self._tensor_multiplexer.train, self._tensor_multiplexer.val]):
+            # for name, fetch in zip(['train', 'val'], [self._tensor_multiplexer.train, self._tensor_multiplexer.val]):
+            for name, fetch in zip(['train', 'val'], [self._train_feed_dict, self._val_feed_dict]):
                 real, pred = [(x * 255).astype(np.uint8) for x in self.sess.run([input_images, predicted], feed_dict=fetch)]
                 fetches['metric/{}/input_images'.format(name)] = real
                 fetches['metric/{}/predicted_images'.format(name)] = pred
 
         if itr % self._val_summary_freq == 0:
-            fetches['metric/val/loss'] = self.sess.run(loss, feed_dict=self._tensor_multiplexer.val)
+            # fetches['metric/val/loss'] = self.sess.run(loss, feed_dict=self._tensor_multiplexer.val)
+            fetches['metric/val/loss'] = self.sess.run(loss, feed_dict=self._val_feed_dict)
 
         return fetches
 

@@ -1,5 +1,5 @@
 {
-    "model": "deterministic",
+    "model": "indep_zr",
     "graph": "c_dna_flow",
     "lr": 0.001,
     "end_lr": 0.0,
@@ -34,5 +34,8 @@
     "c_dna_kernel_size": [5, 5],              
     "schedule_sampling": "inverse_sigmoid",
     "schedule_sampling_k": 900.0,
-    "schedule_sampling_steps": [0, 100000]
+    "schedule_sampling_steps": [0, 100000],
+    "zat_kl_weight": 0.001,
+    "action_weight": 1.0,
+    "num_domains": 3
 }

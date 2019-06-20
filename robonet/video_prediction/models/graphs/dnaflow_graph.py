@@ -17,6 +17,19 @@ class DNAFlowGraphWrapper(BaseGraph):
             # TODO: I really don't like this. Should just error at this point instead of padding
             inputs = {name: tf_utils.maybe_pad_or_slice(input, hparams.sequence_length - 1)
                 for name, input in inputs.items()}
+
+            if hparams.zr_dim:
+                zrs_mu = [tf.Variable(tf.zeros([hparams.zr_dim])) for i in range(hparams.num_domains)]
+                zrs_log_sigma = [tf.Variable(tf.zeros([hparams.zr_dim])) for i in range(hparams.num_domains)]
+                zrs = [m + tf.random_normal(tf.shape(m)) * tf.exp(s) for m, s in zip(zrs_mu, zrs_log_sigma)]
+                tiled_zrs = []
+                batch_size = inputs['images'].shape[1].value
+                for i in range(hparams.num_domains):
+                    tiled_zr = tf.tile(zrs[i], [(hparams.sequence_length - 1) * batch_size // hparams.num_domains])
+                    tiled_zrs.append(tf.reshape(tiled_zr, (hparams.sequence_length - 1, batch_size // hparams.num_domains, hparams.zr_dim)))
+
+                zrs = tf.concat(tiled_zrs, axis=1)
+                inputs['zrs'] = zrs
             
             cell = VPredCell(inputs, hparams)
             outputs, _ = tf.nn.dynamic_rnn(cell, inputs, dtype=tf.float32,
@@ -54,6 +67,10 @@ class DNAFlowGraphWrapper(BaseGraph):
             'schedule_sampling_k': 900.0,
             'schedule_sampling_steps': [0, 100000],
             
-            'renormalize_pixdistrib': True
+            'renormalize_pixdistrib': True,
+
+            'num_domains': 0,
+            'zr_dim': 8,
+            'za_dim': 4
         }
         return dict(itertools.chain(BaseGraph.default_hparams().items(), default_params.items()))
