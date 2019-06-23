@@ -6,7 +6,7 @@ from robonet.video_prediction.utils import tf_utils
 import numpy as np
 import os
 from tensorflow.contrib.training import HParams
-
+from .util import pad_and_concat, render_dist, expected_pixel_distance
 
 class VPredTrainable(Trainable):
     def _setup(self, config):
@@ -17,8 +17,8 @@ class VPredTrainable(Trainable):
         metadata = self._filter_metadata(load_metadata(config['data_directory']))
         inputs, targets = self._get_input_targets(DatasetClass, metadata, dataset_hparams)
 
-        self._estimator, self._metrics = model_fn(self._hparams.n_gpus, self._hparams.graph_type, False, 
-                                inputs, targets, tf.estimator.ModeKeys.TRAIN, model_hparams)
+        self._estimator, self._scalar_metrics, self._tensor_metrics = model_fn(self._hparams.n_gpus, self._hparams.graph_type, 
+                                                    False, inputs, targets, tf.estimator.ModeKeys.TRAIN, model_hparams)
         parameter_count = tf.reduce_sum([tf.reduce_prod(tf.shape(v)) for v in tf.trainable_variables()])
 
         self._global_step = tf.train.get_or_create_global_step()
@@ -81,14 +81,22 @@ class VPredTrainable(Trainable):
         data_loader = DatasetClass(self._hparams.batch_size, metadata=metadata, hparams=dataset_hparams)
         assert data_loader.hparams.get('load_random_cam', False), "function assumes loader will grab one random camera feed in multi-cam object"
         
-        self._tensor_multiplexer = MultiplexedTensors(data_loader, ['images', 'actions', 'states'])
-        images, actions, states = [self._tensor_multiplexer[k] for k in ['images', 'actions', 'states']]
-        images = images[:, :, 0]          # grab cam 0
+        tensor_names = ['actions', 'images', 'states']
+        if 'annotations' in data_loader:
+            tensor_names = ['actions', 'images', 'states', 'annotations']
+            
+        self._tensor_multiplexer = MultiplexedTensors(data_loader, tensor_names)
+        loaded_tensors = [self._tensor_multiplexer[k] for k in tensor_names]
         
-        inputs, targets = {'actions': actions}, {}
-        for k, v in zip(['states', 'images'], [states, images]):
+        self._real_annotations = None
+        self._real_images = loaded_tensors[1] = loaded_tensors[1][:, :, 0]              # grab cam 0 for images
+        if 'annotations' in data_loader:
+            loaded_tensors[3] = loaded_tensors[3][:, :, 0]                              # grab cam 0 for annotations
+            self._real_annotations = loaded_tensors[3]
+        
+        inputs, targets = {'actions': loaded_tensors[0]}, {}
+        for k, v in zip(tensor_names[1:], loaded_tensors[1:]):
             inputs[k], targets[k] = v[:, :-1], v
-        self._real_images = images
 
         return inputs, targets
 
@@ -96,32 +104,35 @@ class VPredTrainable(Trainable):
         itr = self.iteration
         
         # no need to increment itr since global step is incremented by train_op
-        loss, train_op, predicted = self._estimator.loss, self._estimator.train_op, self._estimator.predictions
+        loss, train_op = self._estimator.loss, self._estimator.train_op
         
         fetches = {'global_step': itr}
         fetches['metric/loss/train'] = self.sess.run([loss, train_op], feed_dict=self._tensor_multiplexer.train)[0]
         
         if itr % self._hparams.image_summary_freq == 0:
-            for name, fetch in zip(['train', 'val'], [self._tensor_multiplexer.train, self._tensor_multiplexer.val]):
-                real, pred = [(x * 255).astype(np.uint8) for x in self.sess.run([self._real_images, predicted], feed_dict=fetch)]
-                pred = np.concatenate([pred[:, 0][:, None] for _ in range(real.shape[1] - pred.shape[1])] + [pred], axis=1)
-
-                image_summary_tensors = []
-                for tensor in [real, pred]:
-                    height_pad = np.zeros((tensor.shape[0], tensor.shape[1], self._hparams.pad_amount, tensor.shape[-2], tensor.shape[-1]), dtype=np.uint8)
-                    tensor = np.concatenate((height_pad, tensor, height_pad), axis=-3)
-                    width_pad = np.zeros((tensor.shape[0], tensor.shape[1], tensor.shape[2], self._hparams.pad_amount, tensor.shape[-1]), dtype=np.uint8)
-                    tensor = np.concatenate((width_pad, tensor, width_pad), axis=-2)
-                    image_summary_tensors.append(tensor)
-        
-                fetches['metric/image_summary/{}'.format(name)] = np.concatenate(image_summary_tensors, axis=2)
+            img_summary_get_ops = [self._real_images, self._tensor_metrics['pred_frames']]
+            if self._real_annotations:
+                img_summary_get_ops = fetch_tensors + [self._real_annotations, self._tensor_metrics['pred_distrib']]
+            
+            for name, fetch_mode in zip(['train', 'val'], [self._tensor_multiplexer.train, self._tensor_multiplexer.val]):
+                img_summary_tensors = self.sess.run(img_summary_get_ops, feed_dict=fetch_mode)
+                real_img, pred_img = img_summary_tensors[:2]
+                fetches['metric/image_summary/{}'.format(name)] = pad_and_concat(real_img, pred_img, self._hparams.pad_amount)
+                if self._real_annotations:
+                    real_dist, pred_dist = [render_dist(x) for x in img_summary_tensors[2:]]
+                    fetches['metric/pixel_warp_summary/{}'.format(name)] = pad_and_concat(real_dist, pred_dist, self._hparams.pad_amount)
 
         if itr % self._hparams.scalar_summary_freq == 0:
             fetches['metric/loss/val'] = self.sess.run(loss, feed_dict=self._tensor_multiplexer.val)
             for name, mode in zip(['train', 'val'], [self._tensor_multiplexer.train, self._tensor_multiplexer.val]):
-                metrics = self.sess.run(self._metrics, feed_dict=mode)
+                metrics = self.sess.run(self._scalar_metrics, feed_dict=mode)
                 for key, value in metrics.items():
                     fetches['metric/{}/{}'.format(key, name)] = value
+                
+                if self._real_annotations:
+                    fetch_tensors = [self._real_annotations, self._tensor_metrics['pred_distrib']]
+                    real_dist, pred_dist = self.sess.run(fetch_tensors, feed_dict=mode)
+                    fetches['metric/pixel_distance/{}'.format(name)] = expected_pixel_distance(real_dist, pred_dist)
 
         fetches['done'] = itr >= self._hparams.max_steps
         

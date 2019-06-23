@@ -47,6 +47,11 @@ def vpred_generator(num_gpus, graph_type, tpu_mode, model_inputs, model_targets,
             logger.warning('states supplied but state_weight=0 so no loss will be computed on predicted states')
     elif hparams.state_weight > 0:
         raise ValueError("states not supplied but state_weight > 0")
+    
+    # if annotations are present construct 'pixel flow error metric'
+    if 'annotations' in model_inputs:
+        inputs['pix_distribs'] = tf.transpose(model_inputs['annotations'], [1, 0, 2, 3, 4])
+        targets['pix_distribs'] =  tf.transpose(model_targets['annotations'][:, hparams.context_frames:], [1, 0, 2, 3, 4])
 
     # build the graph
     model_graph = graph_class()
@@ -74,7 +79,10 @@ def vpred_generator(num_gpus, graph_type, tpu_mode, model_inputs, model_targets,
         gen_images = outputs.get('gen_images_enc', outputs['gen_images'])
         target_images = targets['images']
         
-        scalar_summaries = {}
+        scalar_summaries, tensor_summaries = {}, {'pred_frames': pred_frames}
+        if 'annotations' in inputs:
+            tensor_summaries['pred_distrib'] = tf.transpose(outputs['gen_pix_distribs'], [1, 0, 2, 3, 4])
+        
         if 'ground_truth_sampling_mean' in outputs:
             scalar_summaries['ground_truth_sampling_mean'] = outputs['ground_truth_sampling_mean']
         
@@ -129,10 +137,10 @@ def vpred_generator(num_gpus, graph_type, tpu_mode, model_inputs, model_targets,
         g_gradvars = optimizer.compute_gradients(loss, var_list=model_graph.vars)
         g_train_op = optimizer.apply_gradients(g_gradvars, global_step=global_step)
 
-        est = tf.estimator.EstimatorSpec(mode, loss=loss, train_op=g_train_op, predictions=pred_frames)
+        est = tf.estimator.EstimatorSpec(mode, loss=loss, train_op=g_train_op)
         if tpu_mode:
             return est
-        return est, scalar_summaries
+        return est, scalar_summaries, tensor_summaries
 
     # if test build the predictor
     raise NotImplementedError

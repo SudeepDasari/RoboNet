@@ -12,6 +12,47 @@ class RoboNetDataset(BaseVideoDataset):
         assert np.isclose(sum(self._hparams.splits), 1) and all([0 <= i <= 1 for i in self._hparams.splits]), "splits is invalid"
         assert self._hparams.load_T >=0, "load_T should be non-negative!"
 
+        self._train_files, self._val_files, self._test_files = [[] for _ in range(3)]
+        self._init_train_val_test_files()
+
+        output_format = [tf.uint8, tf.float32, tf.float32]        
+        if self._hparams.load_annotations:
+            output_format = output_format + [tf.float32]
+        
+        if self._hparams.ret_fnames:
+            output_format = output_format + [tf.string]
+        output_format = tuple(output_format)
+
+        self._data_loaders = {}
+        # DON'T WRITE THIS SECTION WITH A FOR LOOP DUE TO BUG WITH TENSORFLOW DATASET
+        # TRAIN
+        if len(self._train_files):
+            train_generator = self._hdf5_generator(self._train_files, self.train_rng, 'train')
+            dataset = tf.data.Dataset.from_generator(lambda: train_generator, output_format)
+            dataset = dataset.map(self._get_dict).prefetch(self._hparams.buffer_size)
+            self._data_loaders['train'] = dataset.make_one_shot_iterator().get_next()
+        else:
+            print('no train files')
+
+        if len(self._val_files):
+            val_generator = self._hdf5_generator(self._val_files, self.val_rng, 'val')
+            dataset = tf.data.Dataset.from_generator(lambda: val_generator, output_format)
+            dataset = dataset.map(self._get_dict).prefetch(max(int(self._hparams.buffer_size / 10), 1))
+            self._data_loaders['val'] = dataset.make_one_shot_iterator().get_next()
+        else:
+            print('no val files')
+        
+        if len(self._test_files):
+            test_generator = self._hdf5_generator(self._test_files, self.test_rng, 'test')
+            dataset = tf.data.Dataset.from_generator(lambda: test_generator, output_format)
+            dataset = dataset.map(self._get_dict).prefetch(max(int(self._hparams.buffer_size / 10), 1))
+            self._data_loaders['test'] = dataset.make_one_shot_iterator().get_next()
+        else:
+            print('no test files')
+
+        return len(self._train_files)
+    
+    def _init_train_val_test_files(self):
         files, min_steps = self._metadata.files, int(min(min(self._metadata.frame['img_T']), min(self._metadata.frame['state_T'])))
         if not self._hparams.load_T:
             self._hparams.load_T = min_steps
@@ -24,50 +65,20 @@ class RoboNetDataset(BaseVideoDataset):
         if splits[-1] < len(files):
             diff = len(files) - splits[-1]
             for i in range(1, len(splits)):
-                splits[i] += diff 
-
-        output_format = [tf.uint8, tf.float32, tf.float32]
+                splits[i] += diff
         
-        if self._hparams.load_annotations:
-            output_format = output_format + [tf.float32]
-        
-        if self._hparams.ret_fnames:
-            output_format = output_format + [tf.string]
-        
-        output_format = tuple(output_format)
-
-        self._data_loaders = {}
-        # DON'T WRITE THIS SECTION WITH A FOR LOOP DUE TO BUG WITH TENSORFLOW DATASET
-        # TRAIN
-        self._train_files = []
         if self._hparams.splits[0]:
             self._train_files = files[:splits[0]]
-            assert len(self._train_files), "no train files"
-            train_generator = self._hdf5_generator(self._train_files, self.train_rng, 'train')
-            dataset = tf.data.Dataset.from_generator(lambda: train_generator, output_format)
-            dataset = dataset.map(self._get_dict).prefetch(self._hparams.buffer_size)
-            self._data_loaders['train'] = dataset.make_one_shot_iterator().get_next()
-
         if self._hparams.splits[1]:
             self._val_files = files[splits[0]: splits[1]]
-            assert len(self._val_files), "no val files"
-            val_generator = self._hdf5_generator(self._val_files, self.val_rng, 'val')
-            dataset = tf.data.Dataset.from_generator(lambda: val_generator, output_format)
-            dataset = dataset.map(self._get_dict).prefetch(max(int(self._hparams.buffer_size / 10), 1))
-            self._data_loaders['val'] = dataset.make_one_shot_iterator().get_next()
-        
         if self._hparams.splits[2]:
             self._test_files = files[splits[1]: splits[2]]
-            assert len(self._val_files), "no test files"
-            test_generator = self._hdf5_generator(self._test_files, self.test_rng, 'test')
-            dataset = tf.data.Dataset.from_generator(lambda: test_generator, output_format)
-            dataset = dataset.map(self._get_dict).prefetch(max(int(self._hparams.buffer_size / 10), 1))
-            self._data_loaders['test'] = dataset.make_one_shot_iterator().get_next()
 
-        return len(self._train_files)
-    
     def _get(self, key, mode):
         return self._data_loaders[mode][key]
+    
+    def __contains__(self, item):
+        return any([item in self._data_loaders.get(m, {}) for m in self.modes])
 
     @staticmethod
     def _get_default_hparams():

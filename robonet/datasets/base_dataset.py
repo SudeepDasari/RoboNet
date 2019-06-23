@@ -36,6 +36,7 @@ class BaseVideoDataset(object):
         
         #initialize dataset
         self._num_ex_per_epoch = self._init_dataset()
+        print('loaded {} train files'.format(self._num_ex_per_epoch))
 
     def _init_dataset(self):
         return 0
@@ -63,6 +64,9 @@ class BaseVideoDataset(object):
             return self.get(key, mode)
 
         return self.get(item)
+    
+    def __contains__(self, item):
+        raise NotImplementedError
 
     @property
     def batch_size(self):
