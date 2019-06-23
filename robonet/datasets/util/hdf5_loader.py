@@ -143,7 +143,7 @@ def load_data(inputs, hparams):
     assert hashlib.sha256(buf).hexdigest() == file_metadata['sha256'], "file hash doesn't match meta-data"
     
     with h5py.File(io.BytesIO(buf)) as hf:
-        start_time, n_states = 0, min(file_metadata['state_T'], file_metadata['img_T'])
+        start_time, n_states = 0, min([file_metadata['state_T'], file_metadata['img_T'], file_metadata['action_T'] + 1])
         assert n_states > 1, "must be more than one state in loaded tensor!"
         if 1 < hparams.load_T < n_states:
             start_time = rng.randint(0, n_states - hparams.load_T)
@@ -166,7 +166,7 @@ def load_data(inputs, hparams):
         states = load_states(hf, file_metadata, hparams).astype(np.float32)[start_time:start_time + n_states]
 
         if hparams.load_annotations:
-            assert file_metadata.get('contains_annotation'), "no annotations to load!"
+            assert file_metadata['contains_annotation'], "no annotations to load!"
             annotations = load_annotations(hf, file_metadata, hparams, selected_cams)
             if hparams.load_random_cam:
                 annotations = annotations[:, 0]

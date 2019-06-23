@@ -8,8 +8,8 @@ target_utilization_fraction: 0.8
 idle_timeout_minutes: 5
 provider:
     type: local
-    head_ip: newton1
-    worker_ips: [newton5, deepthought]
+    head_ip: deepthought
+    worker_ips: [newton5, newton1]
 auth:
     ssh_user: sudeep
     ssh_private_key: ~/.ssh/id_rsa

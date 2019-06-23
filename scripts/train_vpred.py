@@ -3,7 +3,7 @@ from __future__ import division
 from __future__ import print_function
 
 import argparse
-from robonet.video_prediction.training import GIFLogger, VPredTrainable
+from robonet.video_prediction.training import GIFLogger, get_trainable
 import json
 import os
 import tensorflow as tf
@@ -24,11 +24,12 @@ def trial_str_creator(trial):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    parser.add_argument('--train_class', type=str, default='VPredTrainable', help='trainable type (specify for customizable train loop behavior)')
     parser.add_argument("--input_dir", type=str, default='./', help="directory containing video prediction data")
     parser.add_argument('--experiment_dir', type=str, default='./', help='directory containing model and dataset hparams')
     parser.add_argument('--save_freq', type=int, default=10000, help="how frequently to save model weights")
     parser.add_argument('--image_summary_freq', type=int, default=1000, help="how frequently to save image summaries")
-    parser.add_argument('--val_summary_freq', type=int, default=100, help="how frequently to take validation summaries")
+    parser.add_argument('--scalar_summary_freq', type=int, default=100, help="how frequently to take validation summaries")
 
     parser.add_argument('--local_mode', action='store_true', help='runs ray in local mode if flag is supplied')
     parser.add_argument('--cluster', action='store_true', help='runs ray in cluster mode (by supplying redis_address) if flag is supplied')
@@ -55,14 +56,14 @@ if __name__ == '__main__':
               'max_steps': tune.grid_search(args.max_steps),
               'data_directory': args.input_dir,
               'image_summary_freq': args.image_summary_freq,
-              'val_summary_freq': args.val_summary_freq,
+              'scalar_summary_freq': args.scalar_summary_freq,
               'robot': args.robot,
               'action_primitive': args.action_primitive,
               'filter_adim': args.filter_adim}
     
     exp = tune.Experiment(
                 name="{}_video_prediction_training".format(os.getlogin()),
-                run=VPredTrainable,
+                run=get_trainable(args.train_class),
                 trial_name_creator=tune.function(trial_str_creator),
                 loggers=[GIFLogger],
                 config=config,

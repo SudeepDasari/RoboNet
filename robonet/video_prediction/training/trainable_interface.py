@@ -15,10 +15,10 @@ class VPredTrainable(Trainable):
         DatasetClass, model_fn = get_dataset_class(dataset_hparams.pop('dataset')), get_model_fn(model_hparams.pop('model'))
 
         metadata = self._filter_metadata(load_metadata(config['data_directory']))
-        dataset = DatasetClass(config.pop('batch_size'), metadata=metadata, hparams=dataset_hparams)
+        inputs, targets = self._get_input_targets(DatasetClass, metadata, dataset_hparams)
 
-        inputs, targets = self._get_input_targets(dataset)
-        self._estimator = model_fn(self._hparams.n_gpus, self._hparams.graph_type, inputs, targets, tf.estimator.ModeKeys.TRAIN, model_hparams)
+        self._estimator, self._metrics = model_fn(self._hparams.n_gpus, self._hparams.graph_type, False, 
+                                inputs, targets, tf.estimator.ModeKeys.TRAIN, model_hparams)
         parameter_count = tf.reduce_sum([tf.reduce_prod(tf.shape(v)) for v in tf.trainable_variables()])
 
         self._global_step = tf.train.get_or_create_global_step()
@@ -51,7 +51,7 @@ class VPredTrainable(Trainable):
             'data_directory': './',
             'n_gpus': 1,
             'pad_amount': 2,
-            'val_summary_freq': 100,
+            'scalar_summary_freq': 100,
             'image_summary_freq': 1000,
             'train_fraction': 0.9,
             'val_fraction': 0.05,
@@ -77,8 +77,10 @@ class VPredTrainable(Trainable):
         assert len(metadata), "no data matches filters!"
         return metadata
 
-    def _get_input_targets(self, data_loader):
+    def _get_input_targets(self, DatasetClass, metadata, dataset_hparams):
+        data_loader = DatasetClass(self._hparams.batch_size, metadata=metadata, hparams=dataset_hparams)
         assert data_loader.hparams.get('load_random_cam', False), "function assumes loader will grab one random camera feed in multi-cam object"
+        
         self._tensor_multiplexer = MultiplexedTensors(data_loader, ['images', 'actions', 'states'])
         images, actions, states = [self._tensor_multiplexer[k] for k in ['images', 'actions', 'states']]
         images = images[:, :, 0]          # grab cam 0
@@ -97,7 +99,7 @@ class VPredTrainable(Trainable):
         loss, train_op, predicted = self._estimator.loss, self._estimator.train_op, self._estimator.predictions
         
         fetches = {'global_step': itr}
-        fetches['metric/train/loss'] = self.sess.run([loss, train_op], feed_dict=self._tensor_multiplexer.train)[0]
+        fetches['metric/loss/train'] = self.sess.run([loss, train_op], feed_dict=self._tensor_multiplexer.train)[0]
         
         if itr % self._hparams.image_summary_freq == 0:
             for name, fetch in zip(['train', 'val'], [self._tensor_multiplexer.train, self._tensor_multiplexer.val]):
@@ -112,18 +114,21 @@ class VPredTrainable(Trainable):
                     tensor = np.concatenate((width_pad, tensor, width_pad), axis=-2)
                     image_summary_tensors.append(tensor)
         
-                fetches['metric/{}/image_summary'.format(name)] = np.concatenate(image_summary_tensors, axis=2)
+                fetches['metric/image_summary/{}'.format(name)] = np.concatenate(image_summary_tensors, axis=2)
 
-        if itr % self._hparams.val_summary_freq == 0:
-            fetches['metric/val/loss'] = self.sess.run(loss, feed_dict=self._tensor_multiplexer.val)
+        if itr % self._hparams.scalar_summary_freq == 0:
+            fetches['metric/loss/val'] = self.sess.run(loss, feed_dict=self._tensor_multiplexer.val)
+            for name, mode in zip(['train', 'val'], [self._tensor_multiplexer.train, self._tensor_multiplexer.val]):
+                metrics = self.sess.run(self._metrics, feed_dict=mode)
+                for key, value in metrics.items():
+                    fetches['metric/{}/{}'.format(key, name)] = value
 
-        fetches['done'] =  itr >= self._hparams.max_steps
+        fetches['done'] = itr >= self._hparams.max_steps
         
         return fetches
 
     def _save(self, checkpoint_dir):
         return self.saver.save(self.sess, os.path.join(checkpoint_dir, 'model'), global_step=self.iteration) + '.meta'
-        
 
     def _restore(self, checkpoints):
         # possibly restore from multiple checkpoints. useful if subset of weights
