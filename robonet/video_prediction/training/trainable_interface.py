@@ -6,7 +6,7 @@ from robonet.video_prediction.utils import tf_utils
 import numpy as np
 import os
 from tensorflow.contrib.training import HParams
-from .util import pad_and_concat, render_dist, expected_pixel_distance
+from .util import pad_and_concat, render_dist
 
 class VPredTrainable(Trainable):
     def _setup(self, config):
@@ -111,16 +111,21 @@ class VPredTrainable(Trainable):
         
         if itr % self._hparams.image_summary_freq == 0:
             img_summary_get_ops = [self._real_images, self._tensor_metrics['pred_frames']]
-            if self._real_annotations:
-                img_summary_get_ops = fetch_tensors + [self._real_annotations, self._tensor_metrics['pred_distrib']]
+            if self._real_annotations is not None:
+                img_summary_get_ops = img_summary_get_ops + [self._real_annotations, self._tensor_metrics['pred_distrib']]
             
             for name, fetch_mode in zip(['train', 'val'], [self._tensor_multiplexer.train, self._tensor_multiplexer.val]):
                 img_summary_tensors = self.sess.run(img_summary_get_ops, feed_dict=fetch_mode)
                 real_img, pred_img = img_summary_tensors[:2]
                 fetches['metric/image_summary/{}'.format(name)] = pad_and_concat(real_img, pred_img, self._hparams.pad_amount)
-                if self._real_annotations:
-                    real_dist, pred_dist = [render_dist(x) for x in img_summary_tensors[2:]]
-                    fetches['metric/pixel_warp_summary/{}'.format(name)] = pad_and_concat(real_dist, pred_dist, self._hparams.pad_amount)
+                if self._real_annotations is not None and name != 'train':
+                    for o in range(img_summary_tensors[-2].shape[-1]):
+                        dist_name = 'robot'
+                        if o > 0:
+                            dist_name = 'object{}'.format(o)
+
+                        real_dist, pred_dist = [render_dist(x[:, :, :, :, o]) for x in img_summary_tensors[2:]]                
+                        fetches['metric/{}_pixel_warp/{}'.format(dist_name, name)] = pad_and_concat(real_dist, pred_dist, self._hparams.pad_amount)
 
         if itr % self._hparams.scalar_summary_freq == 0:
             fetches['metric/loss/val'] = self.sess.run(loss, feed_dict=self._tensor_multiplexer.val)
@@ -128,11 +133,6 @@ class VPredTrainable(Trainable):
                 metrics = self.sess.run(self._scalar_metrics, feed_dict=mode)
                 for key, value in metrics.items():
                     fetches['metric/{}/{}'.format(key, name)] = value
-                
-                if self._real_annotations:
-                    fetch_tensors = [self._real_annotations, self._tensor_metrics['pred_distrib']]
-                    real_dist, pred_dist = self.sess.run(fetch_tensors, feed_dict=mode)
-                    fetches['metric/pixel_distance/{}'.format(name)] = expected_pixel_distance(real_dist, pred_dist)
 
         fetches['done'] = itr >= self._hparams.max_steps
         

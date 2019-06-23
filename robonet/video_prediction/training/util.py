@@ -16,15 +16,9 @@ def pad_and_concat(real_frames, pred_frames, pad_amount):
     return np.concatenate(image_summary_tensors, axis=2)
 
 
-def expected_pixel_distance(real_dist, pred_dist):
-    import pdb; pdb.set_trace()
-    return 0
-
-
 def render_dist(dist):
-    rendered = np.zeros((dist.shape[0], dist.shape[1], dist.shape[2], dist.shape[3], 3), dtype=np.uint8)
+    rendered = np.zeros((dist.shape[0], dist.shape[1], dist.shape[2], dist.shape[3], 3), dtype=np.float32)
     for b in range(dist.shape[0]):
         for t in range(dist.shape[1]):
-            dist_t = dist[b][t] / (np.amax(dist_p[b][t]) + 1e-6)
-            rendered[b,t] = (np.squeeze(plt.cm.viridis(dist_t)[:, :, :3]) * 255).astype(np.uint8)
+            rendered[b,t] = np.squeeze(plt.cm.viridis(dist[b][t])[:, :, :3])
     return rendered

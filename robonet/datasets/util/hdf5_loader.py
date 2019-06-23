@@ -115,14 +115,14 @@ def load_actions(file_pointer, meta_data, hparams):
 
 
 def load_annotations(file_pointer, metadata, hparams, cams_to_load):
-    annot = np.zeros((metadata['img_T'], len(cams_to_load), target_height, target_width, 2), dtype=np.float32)
-    if file_metadata.get('contains_annotation', False) != True and hparams.zero_if_missing_annotation:
-        return annot
-
-    assert file_metadata['contains_annotation'], "no annotations to load!"
     old_height, old_width = metadata['frame_dim']
     target_height, target_width = hparams.img_size
     scale_height, scale_width = target_height / float(old_height), target_width / float(old_width)
+    annot = np.zeros((metadata['img_T'], len(cams_to_load), target_height, target_width, 2), dtype=np.float32)
+    if metadata.get('contains_annotation', False) != True and hparams.zero_if_missing_annotation:
+        return annot
+
+    assert metadata['contains_annotation'], "no annotations to load!"
     point_mat = file_pointer['env']['bbox_annotations'][:].astype(np.int32)
 
     for t in range(metadata['img_T']):
@@ -171,7 +171,7 @@ def load_data(inputs, hparams):
         states = load_states(hf, file_metadata, hparams).astype(np.float32)[start_time:start_time + n_states]
 
         if hparams.load_annotations:
-            annotations = load_annotations(hf, file_metadata, hparams, selected_cams)
+            annotations = load_annotations(hf, file_metadata, hparams, selected_cams)[start_time:start_time + n_states]
             if hparams.load_random_cam:
                 annotations = annotations[:, 0]
             return images, actions, states, annotations
