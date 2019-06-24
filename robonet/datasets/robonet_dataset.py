@@ -96,9 +96,9 @@ class RoboNetDataset(BaseVideoDataset):
         return HParams(**default_dict)
 
     def _hdf5_generator(self, files, rng, mode):
-        n_workers = max(1, int(self._batch_size // 5))
+        n_workers = 1
         if self._hparams.all_modes_max_workers or mode == 'train':
-            n_workers = self._batch_size
+            n_workers = max(1, int(self._batch_size // 2))
         
         p = multiprocessing.Pool(n_workers)
         file_index, n_epochs = 0, 0

@@ -7,6 +7,8 @@ import numpy as np
 import os
 from tensorflow.contrib.training import HParams
 from .util import pad_and_concat, render_dist
+import time
+
 
 class VPredTrainable(Trainable):
     def _setup(self, config):
@@ -107,7 +109,10 @@ class VPredTrainable(Trainable):
         loss, train_op = self._estimator.loss, self._estimator.train_op
         
         fetches = {'global_step': itr}
-        fetches['metric/loss/train'] = self.sess.run([loss, train_op], feed_dict=self._tensor_multiplexer.train)[0]
+
+        start = time.time()
+        train_loss = self.sess.run([loss, train_op], feed_dict=self._tensor_multiplexer.train)[0]
+        fetches['metric/step_time'] = time.time() - start
         
         if itr % self._hparams.image_summary_freq == 0:
             img_summary_get_ops = [self._real_images, self._tensor_metrics['pred_frames']]
@@ -128,6 +133,7 @@ class VPredTrainable(Trainable):
                         fetches['metric/{}_pixel_warp/{}'.format(dist_name, name)] = pad_and_concat(real_dist, pred_dist, self._hparams.pad_amount)
 
         if itr % self._hparams.scalar_summary_freq == 0:
+            fetches['metric/loss/train'] = train_loss
             fetches['metric/loss/val'] = self.sess.run(loss, feed_dict=self._tensor_multiplexer.val)
             for name, mode in zip(['train', 'val'], [self._tensor_multiplexer.train, self._tensor_multiplexer.val]):
                 metrics = self.sess.run(self._scalar_metrics, feed_dict=mode)
@@ -144,8 +150,7 @@ class VPredTrainable(Trainable):
     def _restore(self, checkpoints):
         # possibly restore from multiple checkpoints. useful if subset of weights
         # (e.g. generator or discriminator) are on different checkpoints.
-        if not isinstance(checkpoints, (list, tuple)):
-            checkpoints = [checkpoints]
+        checkpoints = [checkpoints.split('.meta')[0]]
         # automatically skip global_step if more than one checkpoint is provided
         skip_global_step = len(checkpoints) > 1
         savers = []
