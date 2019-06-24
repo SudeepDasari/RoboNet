@@ -37,5 +37,6 @@
     "schedule_sampling_steps": [0, 100000],
     "zat_kl_weight": 0.001,
     "action_weight": 1.0,
-    "num_domains": 3
+    "num_domains": 3,
+    "zr_kl_weight": 0.0
 }

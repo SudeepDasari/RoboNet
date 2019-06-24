@@ -37,9 +37,9 @@ if __name__ == '__main__':
     config = {'dataset_hparams': dataset_hparams,
               'model_hparams': model_hparams,
               'n_gpus': 1,
-              'train_frac': tune.grid_search([0.9, 0.05]),
+              'train_frac': 0.9,
               'data_directory': args.input_dir,
-              'batch_size': 16}
+              'batch_size': 8}
 
     
     exp = tune.Experiment(

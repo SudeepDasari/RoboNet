@@ -25,8 +25,9 @@ class VPredTrainable(Trainable):
             batch_size = config.pop('batch_size')
             input_images, input_actions, input_states, target_images, target_states = [], [], [], [], []
 
+            domains = ['sudri0', 'sudri1', 'sudri2', 'sudri4']
             for i in range(model_hparams['num_domains']):
-                mod_metadata = metadata[metadata['camera_configuration'] == 'sudri{}'.format(i)]
+                mod_metadata = metadata[metadata['camera_configuration'] == domains[i]]
                 dataset = DatasetClass(batch_size, metadata=mod_metadata, hparams=dataset_hparams)
                 print('loaded dataset!')
 
