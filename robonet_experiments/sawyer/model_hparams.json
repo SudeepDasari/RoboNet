@@ -1,10 +1,9 @@
 {
     "model": "stochastic",
-    "graph": "c_dna_flow",
+    "graph_type": "c_dna_flow",
     "lr": 0.001,
     "end_lr": 0.0,
     "decay_steps": [200000, 300000],
-    "max_steps": 300000,
     "beta1": 0.9,
     "where_add": "all",
     "beta2": 0.999,

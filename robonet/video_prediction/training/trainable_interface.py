@@ -5,33 +5,35 @@ from robonet.video_prediction.models import get_model_fn
 from robonet.video_prediction.utils import tf_utils
 import numpy as np
 import os
+from tensorflow.contrib.training import HParams
+from .util import pad_and_concat, render_dist
+import time
 
 
 class VPredTrainable(Trainable):
     def _setup(self, config):
         # run hparams are passed in through config dict
-        dataset_hparams, model_hparams, graph_type, n_gpus = self._extract_hparams(config)
-        self._config, self._dataset_hparams, self._model_hparams = config, dataset_hparams, model_hparams
+        dataset_hparams, model_hparams, self._hparams = self._extract_hparams(config)
         DatasetClass, model_fn = get_dataset_class(dataset_hparams.pop('dataset')), get_model_fn(model_hparams.pop('model'))
 
         metadata = self._filter_metadata(load_metadata(config['data_directory']))
         if model_hparams['num_domains'] == 1:
-            dataset = DatasetClass(config.pop('batch_size'), metadata=metadata, hparams=dataset_hparams)
+            # dataset = DatasetClass(config.pop('batch_size'), metadata=metadata, hparams=dataset_hparams)
             print('loaded dataset!')
-            inputs, targets = self._get_input_targets(dataset)
+            inputs, targets = self._get_input_targets(DatasetClass, metadata, dataset_hparams)
         else:
             self._tensor_multiplexers = []
-            self._input_images = []
+            self._real_images = []
             batch_size = config.pop('batch_size')
             input_images, input_actions, input_states, target_images, target_states = [], [], [], [], []
 
             domains = ['sudri0', 'sudri1', 'sudri2', 'sudri4']
             for i in range(model_hparams['num_domains']):
                 mod_metadata = metadata[metadata['camera_configuration'] == domains[i]]
-                dataset = DatasetClass(batch_size, metadata=mod_metadata, hparams=dataset_hparams)
+                # dataset = DatasetClass(batch_size, metadata=mod_metadata, hparams=dataset_hparams)
                 print('loaded dataset!')
 
-                inputs, targets = self._get_input_targets(dataset)
+                inputs, targets = self._get_input_targets(DatasetClass, mod_metadata, dataset_hparams)
                 input_images.append(inputs['images'])
                 input_actions.append(inputs['actions'])
                 input_states.append(inputs['states'])
@@ -50,88 +52,143 @@ class VPredTrainable(Trainable):
             for t in self._tensor_multiplexers:
                 self._train_feed_dict.update(t.train)
                 self._val_feed_dict.update(t.val)
-        self._estimator = model_fn(n_gpus, graph_type, inputs, targets, tf.estimator.ModeKeys.TRAIN, model_hparams)
+        self._estimator, self._scalar_metrics, self._tensor_metrics = model_fn(self._hparams.n_gpus, self._hparams.graph_type, 
+                                                    False, inputs, targets, tf.estimator.ModeKeys.TRAIN, model_hparams)
+        parameter_count = tf.reduce_sum([tf.reduce_prod(tf.shape(v)) for v in tf.trainable_variables()])
 
         self._global_step = tf.train.get_or_create_global_step()
-        self.saver = tf.train.Saver(max_to_keep=config.get('max_to_keep', 3))
+        self.saver = tf.train.Saver(max_to_keep=self._hparams.max_to_keep)
         self.sess = tf.Session()
         self.sess.run(tf.global_variables_initializer())
+        print("parameter_count =", self.sess.run(parameter_count))
 
     def _extract_hparams(self, config):
         """
         Grabs and (optionally) modifies hparams
         """
         dataset_hparams, model_hparams = config.pop('dataset_hparams', {}), config.pop('model_hparams', {})
-        graph_type = model_hparams.pop('graph')
+        hparams = self._default_hparams().override_from_dict(config)
+        hparams.graph_type = model_hparams.pop('graph_type')                      # required key which tells model which graph to load
+        assert hparams.max_steps > 0, "max steps must be positive!"
 
-        if 'train_frac' in config:
-            train_frac = config['train_frac']
-            dataset_hparams['splits'] = [train_frac, 0.95 - train_frac, 0.05]
-
-        self._val_summary_freq = config.get('val_summary_freq', 100)
-        self._image_summary_freq = config.get('image_summary_freq', 5000)
+        if 'splits' not in dataset_hparams:
+            dataset_hparams['splits'] = [hparams.train_fraction, hparams.val_fraction, 1 - hparams.val_fraction - hparams.train_fraction]
+            assert all([x >= 0 for x in dataset_hparams['splits']]), "invalid train/val fractions!"
 
         if 'sequence_length' in model_hparams and 'load_T' not in dataset_hparams:
             dataset_hparams['load_T'] = model_hparams['sequence_length'] + 1
-        return dataset_hparams, model_hparams, graph_type, config.get('n_gpus', 1)
+        
+        return dataset_hparams, model_hparams, hparams
+    
+    def _default_hparams(self):
+        default_dict = {
+            'batch_size': 16,
+            'data_directory': './',
+            'n_gpus': 1,
+            'pad_amount': 2,
+            'scalar_summary_freq': 100,
+            'image_summary_freq': 1000,
+            'train_fraction': 0.9,
+            'val_fraction': 0.05,
+            'max_to_keep': 3,
+            'robot': '',
+            'action_primitive': '',
+            'filter_adim': 0,
+            'max_steps': 300000
+        }
+        return HParams(**default_dict)
 
     def _filter_metadata(self, metadata):
         """
         filters metadata based on configuration file
             - overwrite/modify for more expressive data loading
         """
-        return metadata[metadata['adim']  == 4]
-    
-    def _get_input_targets(self, data_loader):
+        if self._hparams.action_primitive:
+            metadata = metadata[metadata['primitives'] == self._hparams.action_primitive]
+        if self._hparams.robot:
+            metadata = metadata[metadata['robot'] == self._hparams.robot]
+        if self._hparams.filter_adim:
+            metadata = metadata[metadata['adim'] == self._hparams.filter_adim]
+        assert len(metadata), "no data matches filters!"
+        return metadata
+
+    def _get_input_targets(self, DatasetClass, metadata, dataset_hparams):
+        data_loader = DatasetClass(self._hparams.batch_size, metadata=metadata, hparams=dataset_hparams)
         assert data_loader.hparams.get('load_random_cam', False), "function assumes loader will grab one random camera feed in multi-cam object"
         # self._tensor_multiplexer = MultiplexedTensors(data_loader, ['images', 'actions', 'states'])
         # images, actions, states = [self._tensor_multiplexer[k] for k in ['images', 'actions', 'states']]
-        t = MultiplexedTensors(data_loader, ['images', 'actions', 'states'])
-        images, actions, states = [t[k] for k in ['images', 'actions', 'states']]
+        t = MultiplexedTensors(data_loader, ['actions', 'images', 'states'])
+        loaded_tensors = [t[k] for k in ['actions', 'images', 'states']]
         self._tensor_multiplexers.append(t)
-        images = images[:, :, 0]          # grab cam 0
+        images = loaded_tensors[1][:, :, 0]          # grab cam 0
         
-        inputs, targets = {'actions': actions}, {}
-        for k, v in zip(['states', 'images'], [states, images]):
+        tensor_names = ['actions', 'images', 'states']
+        if 'annotations' in data_loader:
+            tensor_names = ['actions', 'images', 'states', 'annotations']
+        
+        self._real_annotations = None
+        # self._real_images = loaded_tensors[1] = loaded_tensors[1][:, :, 0]              # grab cam 0 for images
+        loaded_tensors[1] = loaded_tensors[1][:, :, 0]
+        if 'annotations' in data_loader:
+            loaded_tensors[3] = loaded_tensors[3][:, :, 0]                              # grab cam 0 for annotations
+            self._real_annotations = loaded_tensors[3]
+        
+        inputs, targets = {'actions': loaded_tensors[0]}, {}
+        for k, v in zip(tensor_names[1:], loaded_tensors[1:]):
             inputs[k], targets[k] = v[:, :-1], v
-        # self._input_images = inputs['images']
-        self._input_images.append(inputs['images'])
+        self._real_images.append(inputs['images'])
         return inputs, targets
 
     def _train(self):
         itr = self.iteration
         
         # no need to increment itr since global step is incremented by train_op
-        loss, train_op, predicted = self._estimator.loss, self._estimator.train_op, self._estimator.predictions
-        input_images = tf.concat(self._input_images, axis=0)
+        real_images = tf.concat(self._real_images, axis=0)
+        loss, train_op = self._estimator.loss, self._estimator.train_op
         
         fetches = {'global_step': itr}
-        # fetches['metric/train/loss'] = self.sess.run([loss, train_op], feed_dict=self._tensor_multiplexer.train)[0]
-        fetches['metric/train/loss'] = self.sess.run([loss, train_op], feed_dict=self._train_feed_dict)[0]
+
+        start = time.time()
+        train_loss = self.sess.run([loss, train_op], feed_dict=self._train_feed_dict)[0]
+        fetches['metric/step_time'] = time.time() - start
         
-        if itr % self._image_summary_freq == 0:
-            # for name, fetch in zip(['train', 'val'], [self._tensor_multiplexer.train, self._tensor_multiplexer.val]):
-            for name, fetch in zip(['train', 'val'], [self._train_feed_dict, self._val_feed_dict]):
-                real, pred = [(x * 255).astype(np.uint8) for x in self.sess.run([input_images, predicted], feed_dict=fetch)]
-                fetches['metric/{}/input_images'.format(name)] = real
-                fetches['metric/{}/predicted_images'.format(name)] = pred
+        if itr % self._hparams.image_summary_freq == 0:
+            img_summary_get_ops = [real_images, self._tensor_metrics['pred_frames']]
+            if self._real_annotations is not None:
+                img_summary_get_ops = img_summary_get_ops + [self._real_annotations, self._tensor_metrics['pred_distrib']]
+            
+            for name, fetch_mode in zip(['train', 'val'], [self._train_feed_dict, self._val_feed_dict]):
+                img_summary_tensors = self.sess.run(img_summary_get_ops, feed_dict=fetch_mode)
+                real_img, pred_img = img_summary_tensors[:2]
+                fetches['metric/image_summary/{}'.format(name)] = pad_and_concat(real_img, pred_img, self._hparams.pad_amount)
+                if self._real_annotations is not None and name != 'train':
+                    for o in range(img_summary_tensors[-2].shape[-1]):
+                        dist_name = 'robot'
+                        if o > 0:
+                            dist_name = 'object{}'.format(o)
 
-        if itr % self._val_summary_freq == 0:
-            # fetches['metric/val/loss'] = self.sess.run(loss, feed_dict=self._tensor_multiplexer.val)
-            fetches['metric/val/loss'] = self.sess.run(loss, feed_dict=self._val_feed_dict)
+                        real_dist, pred_dist = [render_dist(x[:, :, :, :, o]) for x in img_summary_tensors[2:]]                
+                        fetches['metric/{}_pixel_warp/{}'.format(dist_name, name)] = pad_and_concat(real_dist, pred_dist, self._hparams.pad_amount)
 
+        if itr % self._hparams.scalar_summary_freq == 0:
+            fetches['metric/loss/train'] = train_loss
+            fetches['metric/loss/val'] = self.sess.run(loss, feed_dict=self._val_feed_dict)
+            for name, mode in zip(['train', 'val'], [self._train_feed_dict, self._val_feed_dict]):
+                metrics = self.sess.run(self._scalar_metrics, feed_dict=mode)
+                for key, value in metrics.items():
+                    fetches['metric/{}/{}'.format(key, name)] = value
+
+        fetches['done'] = itr >= self._hparams.max_steps
+        
         return fetches
 
     def _save(self, checkpoint_dir):
-        return self.saver.save(
-            self.sess, os.path.join(checkpoint_dir, 'model'),
-            global_step=self.iteration)
+        return self.saver.save(self.sess, os.path.join(checkpoint_dir, 'model'), global_step=self.iteration) + '.meta'
 
     def _restore(self, checkpoints):
         # possibly restore from multiple checkpoints. useful if subset of weights
         # (e.g. generator or discriminator) are on different checkpoints.
-        if not isinstance(checkpoints, (list, tuple)):
-            checkpoints = [checkpoints]
+        checkpoints = [checkpoints.split('.meta')[0]]
         # automatically skip global_step if more than one checkpoint is provided
         skip_global_step = len(checkpoints) > 1
         savers = []

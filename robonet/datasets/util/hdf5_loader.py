@@ -31,6 +31,7 @@ def default_loader_hparams():
             'cams_to_load': (-1),
             'impute_autograsp_action': True,
             'load_annotations': False,
+            'zero_if_missing_annotation': False, 
             'load_T': 0                               # TODO implement error checking here for jagged reading
             }
 
@@ -117,8 +118,12 @@ def load_annotations(file_pointer, metadata, hparams, cams_to_load):
     old_height, old_width = metadata['frame_dim']
     target_height, target_width = hparams.img_size
     scale_height, scale_width = target_height / float(old_height), target_width / float(old_width)
-    point_mat = file_pointer['env']['bbox_annotations'][:].astype(np.int32)
     annot = np.zeros((metadata['img_T'], len(cams_to_load), target_height, target_width, 2), dtype=np.float32)
+    if metadata.get('contains_annotation', False) != True and hparams.zero_if_missing_annotation:
+        return annot
+
+    assert metadata['contains_annotation'], "no annotations to load!"
+    point_mat = file_pointer['env']['bbox_annotations'][:].astype(np.int32)
 
     for t in range(metadata['img_T']):
         for n, chosen_cam in enumerate(cams_to_load):
@@ -143,7 +148,7 @@ def load_data(inputs, hparams):
     assert hashlib.sha256(buf).hexdigest() == file_metadata['sha256'], "file hash doesn't match meta-data"
     
     with h5py.File(io.BytesIO(buf)) as hf:
-        start_time, n_states = 0, min(file_metadata['state_T'], file_metadata['img_T'])
+        start_time, n_states = 0, min([file_metadata['state_T'], file_metadata['img_T'], file_metadata['action_T'] + 1])
         assert n_states > 1, "must be more than one state in loaded tensor!"
         if 1 < hparams.load_T < n_states:
             start_time = rng.randint(0, n_states - hparams.load_T)
@@ -166,8 +171,7 @@ def load_data(inputs, hparams):
         states = load_states(hf, file_metadata, hparams).astype(np.float32)[start_time:start_time + n_states]
 
         if hparams.load_annotations:
-            assert file_metadata.get('contains_annotation'), "no annotations to load!"
-            annotations = load_annotations(hf, file_metadata, hparams, selected_cams)
+            annotations = load_annotations(hf, file_metadata, hparams, selected_cams)[start_time:start_time + n_states]
             if hparams.load_random_cam:
                 annotations = annotations[:, 0]
             return images, actions, states, annotations

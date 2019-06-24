@@ -29,7 +29,7 @@ def loss_default_hparams(graph_class):
         'tv_weight': 0.001,
         'action_weight': 1.0,
         'zat_kl_weight': 0.001,
-        'zr_kl_weight': 0.001   # if nonzero, model infers zr from image pairs and actions (if we want to generalize to new domain at test time)
+        'zr_kl_weight': 0.0   # if nonzero, model infers zr from image pairs and actions (if we want to generalize to new domain at test time)
                                 # otherwise, model maintains independent zrs (no generalization to new domain at test time)
     }
 
@@ -91,7 +91,7 @@ def encoder_fn(inputs, targets, hparams=None):
     return outputs
 
 
-def vpred_generator(num_gpus, graph_type, inputs, targets, mode, params):
+def vpred_generator(num_gpus, graph_type, tpu_mode, inputs, targets, mode, params):
     # get graph class and setup default hyper-parameters
     logger = logging.getLogger(__name__)
     graph_class = get_graph_class(graph_type)
@@ -139,13 +139,19 @@ def vpred_generator(num_gpus, graph_type, inputs, targets, mode, params):
         
         gen_images = outputs.get('gen_images_enc', outputs['gen_images'])
         target_images = targets['images']
+
+        scalar_summaries, tensor_summaries = {}, {'pred_frames': pred_frames}
         
         if hparams.l1_weight:
             gen_l1_loss = losses.l1_loss(gen_images, target_images)
             gen_losses["gen_l1_loss"] = (gen_l1_loss, hparams.l1_weight)
+            scalar_summaries['l1_loss'] = gen_l1_loss
+
         if hparams.l2_weight:
             gen_l2_loss = losses.l2_loss(gen_images, target_images)
             gen_losses["gen_l2_loss"] = (gen_l2_loss, hparams.l2_weight)
+            scalar_summaries['l2_loss'] = gen_l2_loss
+
         if (hparams.l1_weight or hparams.l2_weight) and hparams.num_scales > 1:
             for i in range(1, hparams.num_scales):
                 scale_factor = 2 ** i
@@ -154,17 +160,25 @@ def vpred_generator(num_gpus, graph_type, inputs, targets, mode, params):
                 if hparams.l1_weight:
                     gen_l1_scale_loss = losses.l1_loss(gen_images_scale, target_images_scale)
                     gen_losses["gen_l1_scale%d_loss" % i] = (gen_l1_scale_loss, hparams.l1_weight)
+                    scalar_summaries['l1_loss_scale{}'.format(i)] = gen_l1_scale_loss
+
                 if hparams.l2_weight:
                     gen_l2_scale_loss = losses.l2_loss(gen_images_scale, target_images_scale)
                     gen_losses["gen_l2_scale%d_loss" % i] = (gen_l2_scale_loss, hparams.l2_weight)
+                    scalar_summaries['l2_loss_scale{}'.format(i)] = gen_l2_scale_loss
+
         if hparams.vgg_cdist_weight:
             gen_vgg_cdist_loss = metrics.vgg_cosine_distance(gen_images, target_images)
             gen_losses['gen_vgg_cdist_loss'] = (gen_vgg_cdist_loss, hparams.vgg_cdist_weight)
+            scalar_summaries['vgg_cdist_loss'] = gen_vgg_cdist_loss
+
         if hparams.state_weight:
             gen_states = outputs.get('gen_states_enc', outputs['gen_states'])
             target_states = targets['states']
             gen_state_loss = losses.l2_loss(gen_states, target_states)
             gen_losses["gen_state_loss"] = (gen_state_loss, hparams.state_weight)
+            scalar_summaries['state_loss'] = gen_state_loss
+
         if hparams.tv_weight:
             gen_flows = outputs.get('gen_flows_enc', outputs['gen_flows'])
             flow_diff1 = gen_flows[..., 1:, :, :, :] - gen_flows[..., :-1, :, :, :]
@@ -173,21 +187,28 @@ def vpred_generator(num_gpus, graph_type, inputs, targets, mode, params):
             gen_tv_loss = tf.reduce_mean(tf.reduce_sum(tf.abs(flow_diff1), axis=(-2, -1))) + \
                           tf.reduce_mean(tf.reduce_sum(tf.abs(flow_diff2), axis=(-2, -1)))
             gen_losses['gen_tv_loss'] = (gen_tv_loss, hparams.tv_weight)
+            scalar_summaries['tv_loss'] = gen_tv_loss
+
         if hparams.action_weight:
             gen_actions = outputs['gen_actions']
             target_actions = inputs['actions'][hparams.context_frames-1:]
             gen_action_loss = losses.l2_loss(gen_actions, target_actions)
             gen_losses["gen_action_loss"] = (gen_action_loss, hparams.action_weight)
+            scalar_summaries['action_loss'] = gen_action_loss
+
         if hparams.zat_kl_weight:   # TODO: add annealing
             gen_zat_kl_loss = losses.kl_loss(outputs['zat_mu'], outputs['zat_log_sigma_sq'])
             gen_losses["zat_kl_loss"] = (gen_zat_kl_loss, hparams.zat_kl_weight)  # possibly annealed kl_weight
+            scalar_summaries['zat_kl_loss'] = gen_zat_kl_loss
+
         if hparams.zr_kl_weight:    # TODO: add annealing
             gen_zr_kl_loss = losses.kl_loss(outputs['zr_mu'], outputs['zr_log_sigma_sq'])
             gen_losses["gen_zr_kl_loss"] = (gen_zr_kl_loss, hparams.zr_kl_weight)  # possibly annealed kl_weight
+            scalar_summaries['gen_zr_kl_loss'] = gen_zr_kl_loss
 
         loss = sum(loss * weight for loss, weight in gen_losses.values())
         g_gradvars = optimizer.compute_gradients(loss, var_list=model_graph.vars)
         g_train_op = optimizer.apply_gradients(g_gradvars, global_step=global_step)
-        return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=g_train_op, predictions=pred_frames)
+        return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=g_train_op, predictions=pred_frames), scalar_summaries, tensor_summaries
     # if test build the predictor
     raise NotImplementedError

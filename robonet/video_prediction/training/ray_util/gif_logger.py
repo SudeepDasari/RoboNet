@@ -1,5 +1,6 @@
 from ray.tune.logger import TFLogger
-from robonet.video_prediction.utils.encode_img import construct_image_tile, encode_images
+from robonet.video_prediction.utils.encode_img import construct_image_tile
+from robonet.video_prediction.utils.ffmpeg_gif import encode_gif
 import numpy as np
 import tensorflow as tf
 
@@ -20,7 +21,7 @@ class GIFLogger(TFLogger):
                 image.height = v.shape[-3]
                 image.width = v.shape[-2]
                 image.colorspace = v.shape[-1]  # 1: grayscale, 2: grayscale + alpha, 3: RGB, 4: RGBA
-                image.encoded_image_string = encode_images(construct_image_tile(v))
+                image.encoded_image_string = encode_gif(construct_image_tile(v), 4)
                 summary.value.add(tag=tag, image=image)
             else:
                 summary.value.add(tag=tag, simple_value=v)
