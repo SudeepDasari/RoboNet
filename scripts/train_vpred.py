@@ -25,8 +25,9 @@ def trial_str_creator(trial):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--train_class', type=str, default='VPredTrainable', help='trainable type (specify for customizable train loop behavior)')
-    parser.add_argument("--input_dir", type=str, default='./', help="directory containing video prediction data")
-    parser.add_argument('--experiment_dir', type=str, default='./', help='directory containing model and dataset hparams')
+    parser.add_argument("--input_dir", type=str, required=True, help="directory containing video prediction data")
+    parser.add_argument("--upload_dir", type=str, default=None, help="if provided ray will sync files to given bucket dir")
+    parser.add_argument('--experiment_dir', type=str, required=True, help='directory containing model and dataset hparams')
     parser.add_argument('--name', type=str, default='', help='training experiment name')
     parser.add_argument('--save_freq', type=int, default=10000, help="how frequently to save model weights")
     parser.add_argument('--image_summary_freq', type=int, default=1000, help="how frequently to save image summaries")
@@ -72,7 +73,8 @@ if __name__ == '__main__':
                 loggers=[GIFLogger],
                 config=config,
                 resources_per_trial= {"cpu": 1, "gpu": 1},
-                checkpoint_freq=args.save_freq)
+                checkpoint_freq=args.save_freq,
+                upload_dir=args.upload_dir)
     
     redis_address = None
     if args.cluster:
