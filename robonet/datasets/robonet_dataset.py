@@ -84,6 +84,7 @@ class RoboNetDataset(BaseVideoDataset):
     def _get_default_hparams():
         default_dict = {
             'RNG': 11381294392481135266,
+            'use_random_train_seed': False,
             'splits': (0.9, 0.05, 0.05),      # train, val, test
             'num_epochs': None,
             'ret_fnames': False,

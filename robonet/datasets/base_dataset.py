@@ -29,6 +29,8 @@ class BaseVideoDataset(object):
             seeds = [i + self._hparams.RNG for i in range(len(seeds))]
         
         for k, seed in zip(self.modes + ['base'], seeds):
+            if k == 'train' and self._hparams.use_random_train_seed:
+                seed = None
             self._random_generator[k] = random.Random(seed)
         
         # assign batch size to private variable
@@ -47,7 +49,8 @@ class BaseVideoDataset(object):
     @staticmethod
     def _get_default_hparams():
         default_dict = {
-            'RNG', 11381294392481135266
+            'RNG', 11381294392481135266,
+            'use_random_train_seed': False
         }
         return HParams(**default_dict)
     
