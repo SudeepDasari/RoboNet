@@ -213,6 +213,9 @@ if __name__ == '__main__':
         tensors = tensors + [loader[x, 'test'] for x in ['images', 'states', 'actions', 'annotations', 'f_names']]
     else:
         loader = RoboNetDataset(args.batch_size, args.path, hparams=hparams)
+        from robonet.datasets import load_metadata
+        meta_data = load_metadata(args.path)
+        import pdb; pdb.set_trace()
         tensors = [loader[x] for x in ['images', 'states', 'actions', 'f_names']]
     s = tf.Session()
     out_tensors = s.run(tensors)

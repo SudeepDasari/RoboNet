@@ -29,7 +29,7 @@ def loss_default_hparams(graph_class):
         'tv_weight': 0.001,
         'action_weight': 1.0,
         'zat_kl_weight': 0.001,
-        'zr_kl_weight': 0.0   # if nonzero, model infers zr from image pairs and actions (if we want to generalize to new domain at test time)
+        'zr_kl_weight': 0.001   # if nonzero, model infers zr from image pairs and actions (if we want to generalize to new domain at test time)
                                 # otherwise, model maintains independent zrs (no generalization to new domain at test time)
     }
 

@@ -27,7 +27,7 @@ class VPredTrainable(Trainable):
             batch_size = config.pop('batch_size')
             input_images, input_actions, input_states, target_images, target_states = [], [], [], [], []
 
-            domains = ['sudri0', 'sudri1', 'sudri2', 'sudri4']
+            domains = ['sudri0', 'sudri1', 'sudri2', 'sudri4', 'vestri_table0', 'vestri_table1', 'vestri_table2', 'vestri_table3']
             for i in range(model_hparams['num_domains']):
                 mod_metadata = metadata[metadata['camera_configuration'] == domains[i]]
                 # dataset = DatasetClass(batch_size, metadata=mod_metadata, hparams=dataset_hparams)
@@ -52,9 +52,11 @@ class VPredTrainable(Trainable):
             for t in self._tensor_multiplexers:
                 self._train_feed_dict.update(t.train)
                 self._val_feed_dict.update(t.val)
+
+            self._real_images = tf.concat(self._real_images, axis=0)
         self._estimator, self._scalar_metrics, self._tensor_metrics = model_fn(self._hparams.n_gpus, self._hparams.graph_type, 
                                                     False, inputs, targets, tf.estimator.ModeKeys.TRAIN, model_hparams)
-        parameter_count = tf.reduce_sum([tf.reduce_prod(tf.shape(v)) for v in tf.trainable_variables()])
+        self._parameter_count = parameter_count = tf.reduce_sum([tf.reduce_prod(tf.shape(v)) for v in tf.trainable_variables()])
 
         self._global_step = tf.train.get_or_create_global_step()
         self.saver = tf.train.Saver(max_to_keep=self._hparams.max_to_keep)
@@ -115,16 +117,15 @@ class VPredTrainable(Trainable):
     def _get_input_targets(self, DatasetClass, metadata, dataset_hparams):
         data_loader = DatasetClass(self._hparams.batch_size, metadata=metadata, hparams=dataset_hparams)
         assert data_loader.hparams.get('load_random_cam', False), "function assumes loader will grab one random camera feed in multi-cam object"
-        # self._tensor_multiplexer = MultiplexedTensors(data_loader, ['images', 'actions', 'states'])
-        # images, actions, states = [self._tensor_multiplexer[k] for k in ['images', 'actions', 'states']]
-        t = MultiplexedTensors(data_loader, ['actions', 'images', 'states'])
-        loaded_tensors = [t[k] for k in ['actions', 'images', 'states']]
-        self._tensor_multiplexers.append(t)
-        images = loaded_tensors[1][:, :, 0]          # grab cam 0
-        
+
         tensor_names = ['actions', 'images', 'states']
         if 'annotations' in data_loader:
             tensor_names = ['actions', 'images', 'states', 'annotations']
+
+        t = MultiplexedTensors(data_loader, tensor_names)
+        loaded_tensors = [t[k] for k in tensor_names]
+        self._tensor_multiplexers.append(t)
+        images = loaded_tensors[1][:, :, 0]          # grab cam 0
         
         self._real_annotations = None
         # self._real_images = loaded_tensors[1] = loaded_tensors[1][:, :, 0]              # grab cam 0 for images
@@ -143,7 +144,7 @@ class VPredTrainable(Trainable):
         itr = self.iteration
         
         # no need to increment itr since global step is incremented by train_op
-        real_images = tf.concat(self._real_images, axis=0)
+        # real_images = tf.concat(self._real_images, axis=0)
         loss, train_op = self._estimator.loss, self._estimator.train_op
         
         fetches = {'global_step': itr}
@@ -153,7 +154,7 @@ class VPredTrainable(Trainable):
         fetches['metric/step_time'] = time.time() - start
         
         if itr % self._hparams.image_summary_freq == 0:
-            img_summary_get_ops = [real_images, self._tensor_metrics['pred_frames']]
+            img_summary_get_ops = [self._real_images, self._tensor_metrics['pred_frames']]
             if self._real_annotations is not None:
                 img_summary_get_ops = img_summary_get_ops + [self._real_annotations, self._tensor_metrics['pred_distrib']]
             
@@ -178,8 +179,7 @@ class VPredTrainable(Trainable):
                 for key, value in metrics.items():
                     fetches['metric/{}/{}'.format(key, name)] = value
 
-        fetches['done'] = itr >= self._hparams.max_steps
-        
+        fetches['done'] = itr >= self._hparams.max_steps        
         return fetches
 
     def _save(self, checkpoint_dir):

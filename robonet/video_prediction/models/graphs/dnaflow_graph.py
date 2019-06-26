@@ -20,6 +20,7 @@ class DNAFlowGraphWrapper(BaseGraph):
 
             if hparams.zr_dim:
                 if outputs_enc is None:
+                    print('no inference network for zr')
                     zrs_mu = [tf.Variable(tf.zeros([hparams.zr_dim])) for i in range(hparams.num_domains)]
                     zrs_log_sigma = [tf.Variable(tf.zeros([hparams.zr_dim])) for i in range(hparams.num_domains)]
                     zrs = [m + tf.random_normal(tf.shape(m)) * tf.exp(s) for m, s in zip(zrs_mu, zrs_log_sigma)]
@@ -98,7 +99,7 @@ class DNAFlowGraphWrapper(BaseGraph):
             
             'renormalize_pixdistrib': True,
 
-            'num_domains': 0,
+            'num_domains': 8,
             'zr_dim': 8,
             'za_dim': 4
         }
