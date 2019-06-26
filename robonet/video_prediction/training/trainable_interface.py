@@ -152,6 +152,8 @@ class VPredTrainable(Trainable):
         
         if self._hparams.restore_dir and not self._restore_logs:
             fetches['restore_logs'] = self._hparams.restore_dir
+            self._restore_logs = True
+
         return fetches
 
     def _save(self, checkpoint_dir):
