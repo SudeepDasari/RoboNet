@@ -8,6 +8,7 @@ import os
 from tensorflow.contrib.training import HParams
 from .util import pad_and_concat, render_dist
 import time
+import glob
 
 
 class VPredTrainable(Trainable):
@@ -27,6 +28,12 @@ class VPredTrainable(Trainable):
         self.saver = tf.train.Saver(max_to_keep=self._hparams.max_to_keep)
         self.sess = tf.Session()
         self.sess.run(tf.global_variables_initializer())
+        
+        if self._hparams.restore_dir:
+            meta_file = glob.glob(self._hparams.restore_dir + '/*.meta')
+            self._restore(meta_file[0])
+            self._restore_logs = False
+    
         print("parameter_count =", self.sess.run(parameter_count))
 
     def _extract_hparams(self, config):
@@ -50,6 +57,7 @@ class VPredTrainable(Trainable):
     def _default_hparams(self):
         default_dict = {
             'batch_size': 16,
+            'restore_dir': '',
             'data_directory': './',
             'n_gpus': 1,
             'pad_amount': 2,
@@ -142,6 +150,8 @@ class VPredTrainable(Trainable):
 
         fetches['done'] = itr >= self._hparams.max_steps
         
+        if self._hparams.restore_dir and not self._restore_logs:
+            fetches['restore_logs'] = self._hparams.restore_dir
         return fetches
 
     def _save(self, checkpoint_dir):

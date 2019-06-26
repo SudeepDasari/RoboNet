@@ -27,6 +27,7 @@ if __name__ == '__main__':
     parser.add_argument('--train_class', type=str, default='VPredTrainable', help='trainable type (specify for customizable train loop behavior)')
     parser.add_argument("--input_dir", type=str, required=True, help="directory containing video prediction data")
     parser.add_argument("--upload_dir", type=str, default=None, help="if provided ray will sync files to given bucket dir")
+    parser.add_argument('--restore_dir', type=str, default='', help='ray will restore checkpoint and tensorboard events from given directory')
     parser.add_argument('--experiment_dir', type=str, required=True, help='directory containing model and dataset hparams')
     parser.add_argument('--name', type=str, default='', help='training experiment name')
     parser.add_argument('--save_freq', type=int, default=10000, help="how frequently to save model weights")
@@ -52,6 +53,7 @@ if __name__ == '__main__':
     
     config = {'dataset_hparams': dataset_hparams,
               'model_hparams': model_hparams,
+              'restore_dir': args.restore_dir,
               'train_fraction': tune.grid_search(args.train_frac),
               'batch_size': tune.grid_search(args.batch_size),
               'val_fraction': tune.grid_search(args.val_frac),
