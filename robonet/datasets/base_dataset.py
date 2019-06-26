@@ -49,7 +49,7 @@ class BaseVideoDataset(object):
     @staticmethod
     def _get_default_hparams():
         default_dict = {
-            'RNG', 11381294392481135266,
+            'RNG': 11381294392481135266,
             'use_random_train_seed': False
         }
         return HParams(**default_dict)
