@@ -5,5 +5,8 @@ def get_model_fn(class_name):
     if class_name == 'deterministic':
         from .deterministic_generator import vpred_generator
         return vpred_generator
+    elif class_name == 'stochastic':
+        from .stochastic_generator import vpred_generator
+        return vpred_generator
     else:
         raise NotImplementedError
