@@ -4,3 +4,4 @@ scipy
 scikit-image
 h5py
 imageio-ffmpeg
+ray

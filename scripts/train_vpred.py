@@ -10,6 +10,7 @@ import tensorflow as tf
 import ray
 import ray.tune as tune
 
+import pdb
 
 def json_try_load(fname):
     try:
@@ -60,16 +61,17 @@ if __name__ == '__main__':
               'robot': args.robot,
               'action_primitive': args.action_primitive,
               'filter_adim': args.filter_adim}
-    
+
     exp = tune.Experiment(
-                name="{}_video_prediction_training".format(os.getlogin()),
+                name="video_prediction_training",   # todo fix this, there's no os.getlogin() on docker
+                # name="{}_video_prediction_training".format(os.getlogin()),
                 run=get_trainable(args.train_class),
                 trial_name_creator=tune.function(trial_str_creator),
                 loggers=[GIFLogger],
                 config=config,
                 resources_per_trial= {"cpu": 1, "gpu": 1},
                 checkpoint_freq=args.save_freq)
-    
+
     redis_address = None
     if args.cluster:
         redis_address = ray.services.get_node_ip_address() + ':6379'

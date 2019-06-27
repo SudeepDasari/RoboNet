@@ -19,7 +19,7 @@ class DNAFlowGraphWrapper(BaseGraph):
                 for name, input in inputs.items()}
 
             if hparams.zr_dim:
-                if outputs_enc is None:
+                if outputs_enc is None: # set zr as trainable variable
                     print('no inference network for zr')
                     zrs_mu = [tf.Variable(tf.zeros([hparams.zr_dim])) for i in range(hparams.num_domains)]
                     zrs_log_sigma = [tf.Variable(tf.zeros([hparams.zr_dim])) for i in range(hparams.num_domains)]

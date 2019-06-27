@@ -1,0 +1,2 @@
+#for setup install
+sudo apt-get install ffmpeg
