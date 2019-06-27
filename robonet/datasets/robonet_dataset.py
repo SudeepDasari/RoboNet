@@ -39,19 +39,20 @@ class RoboNetDataset(BaseVideoDataset):
             self._hparams.load_T = min_steps
         else:
             assert self._hparams.load_T <= min_steps, "ask to load {} steps but some records only have {}!".format(self._hparams.min_T, min_steps)
-        source_files = [m.files for m in self._metadata]
-        [self.rng.shuffle(f) for f in source_files]
 
-        for files in source_files:
-            train_files, val_files, test_files = self._split_files(files)
+        for metadata in self._metadata:
+            train_files, val_files, test_files = self._split_files(metadata)
             if self._hparams.splits[0]:
                 assert len(train_files) > 0, "train files requested but non-given"
+                self.rng.shuffle(train_files) 
                 self._train_sources.append(train_files)
             if self._hparams.splits[1]:
                 assert len(val_files) > 0, "val files requested but non-given"
+                self.rng.shuffle(val_files) 
                 self._val_sources.append(val_files)
             if self._hparams.splits[2]:
                 assert len(test_files) > 0, "test files requested but non-given"
+                self.rng.shuffle(test_files) 
                 self._test_sources.append(test_files)
 
         output_format = [tf.uint8, tf.float32, tf.float32]        
@@ -102,7 +103,8 @@ class RoboNetDataset(BaseVideoDataset):
 
         return n_train_ex
 
-    def _split_files(self, files):
+    def _split_files(self, metadata):
+        files = metadata.files
         train_files, val_files, test_files = None, None, None
         splits = np.cumsum([int(i * len(files)) for i in self._hparams.splits]).tolist()
        
