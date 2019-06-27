@@ -34,5 +34,5 @@
     "schedule_sampling": "inverse_sigmoid",
     "schedule_sampling_k": 900.0,
     "schedule_sampling_steps": [0, 100000],
-    "num_domains": 8
+    "num_domains": 1
 }
