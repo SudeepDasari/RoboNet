@@ -47,12 +47,15 @@ class RoboNetDataset(BaseVideoDataset):
         # YOU MUST CALL next(generator) OR ELSE TENSORFLOW SOMETIMES CRASHES
         # IF YOU KNOW WHY THESE BUGS HAPPENS YOU DESERVE A TURING AWARD
         # TRAIN
+        n_workers = min(self._batch_size, multiprocessing.cpu_count())
+        if self._hparams.pool_workers:
+            n_workers = min(self._hparams.pool_workers, n_workers)
+        self._pool = multiprocessing.Pool(n_workers)
+
         if len(self._train_sources):
             n_train_ex = sum(len(f) for f in self._train_sources)
             train_generator = self._hdf5_generator(self._train_sources, self.train_rng, 'train')
-            for _ in range(100):
-                next(train_generator)
-                print('train', _)
+            next(train_generator)
             dataset = tf.data.Dataset.from_generator(lambda: train_generator, output_format)
             dataset = dataset.map(self._get_dict).prefetch(self._hparams.buffer_size)
             self._data_loaders['train'] = dataset.make_one_shot_iterator().get_next()
@@ -61,9 +64,7 @@ class RoboNetDataset(BaseVideoDataset):
 
         if len(self._val_sources):
             val_generator = self._hdf5_generator(self._val_sources, self.val_rng, 'val')
-            for _ in range(100):
-                next(val_generator)
-                print('val', _)
+            next(val_generator)
             dataset = tf.data.Dataset.from_generator(lambda: val_generator, output_format)
             dataset = dataset.map(self._get_dict).prefetch(max(int(self._hparams.buffer_size / 10), 1))
             self._data_loaders['val'] = dataset.make_one_shot_iterator().get_next()
@@ -72,9 +73,7 @@ class RoboNetDataset(BaseVideoDataset):
         
         if len(self._test_sources):
             test_generator = self._hdf5_generator(self._test_sources, self.test_rng, 'test')
-            for _ in range(10):
-                next(test_generator)
-                print('test', _)
+            next(test_generator)
             dataset = tf.data.Dataset.from_generator(lambda: test_generator, output_format)
             dataset = dataset.map(self._get_dict).prefetch(max(int(self._hparams.buffer_size / 10), 1))
             self._data_loaders['test'] = dataset.make_one_shot_iterator().get_next()
@@ -139,23 +138,18 @@ class RoboNetDataset(BaseVideoDataset):
             'splits': (0.9, 0.05, 0.05),             # train, val, test
             'num_epochs': None,                      # maximum number of epochs (None if iterate forever)
             'ret_fnames': False,                     # return file names of loaded hdf5 record
-            'buffer_size': 1,                     # examples to prefetch
+            'buffer_size': 1,                        # examples to prefetch
             'all_modes_max_workers': True,           # use multi-threaded workers regardless of the mode
             'load_random_cam': True,                 # load a random camera for each example
-            'same_cam_across_sub_batch': False       # same camera across sub_batches
+            'same_cam_across_sub_batch': False,      # same camera across sub_batches
+            'pool_workers': 0                        # number of workers for pool (if 0 uses batch_size workers)
         }
         for k, v in default_loader_hparams().items():
             default_dict[k] = v
         
         return HParams(**default_dict)
 
-    def _hdf5_generator(self, sources, rng, mode):
-        
-        n_workers = 1
-        if self._hparams.all_modes_max_workers or mode == 'train':
-            n_workers = max(1, int(self._batch_size // 2))
-        
-        p = multiprocessing.Pool(n_workers)
+    def _hdf5_generator(self, sources, rng, mode): 
         file_indices, source_epochs = [[0 for _ in range(len(sources))] for _ in range(2)]
 
         while True:
@@ -205,9 +199,7 @@ class RoboNetDataset(BaseVideoDataset):
                         b += 1
 
             batch_jobs = [(fn, fm, fh, fr) for fn, fm, fh, fr in zip(file_names, file_metadata, file_hparams, file_rng)]
-
-            batches = []
-            batches = p.map(_load_data, batch_jobs)
+            batches = self._pool.map_async(_load_data, batch_jobs).get()
 
             ret_vals = []
             for i, b in enumerate(batches):
@@ -255,16 +247,10 @@ class RoboNetDataset(BaseVideoDataset):
         return out_dict
 
 
-def _timing_test(N, path, batch_size):
+def _timing_test(N, loader):
     import time
-    from robonet.datasets import load_metadata
     import random
 
-    hparams = {'ret_fnames': True, 'sub_batch_size': 2, 'action_mismatch': 3, 'state_mismatch': 3, 'splits':[0.8, 0.1, 0.1]}
-    meta_data = load_metadata(args.path)
-    meta_data = meta_data[meta_data['adim'] == 4]
-
-    loader = RoboNetDataset(batch_size, path, hparams)
     mode_tensors = {}
     for m in ['train', 'test', 'val']:
         mode_tensors[m] = [loader[x, m] for x in ['images', 'states', 'actions']]
@@ -275,10 +261,12 @@ def _timing_test(N, path, batch_size):
         m = random.choice(['train', 'test', 'val'])
         start = time.time()
         s.run(mode_tensors[m])
-        timings.append(time.time() - start)
+        if m == 'train':
+            timings.append(time.time() - start)
 
         print('run {}, mode {} took {} seconds'.format(i, m, timings[-1]))
-    print('runs took on average {} seconds'.format(sum(timings) / len(timings)))
+    if timings:
+        print('train runs took on average {} seconds'.format(sum(timings) / len(timings)))
 
 
 if __name__ == '__main__':
@@ -288,13 +276,10 @@ if __name__ == '__main__':
     parser.add_argument('path', help='path to files containing hdf5 dataset')
     parser.add_argument('--robots', type=str, nargs='+', default=None, help='will construct a dataset with batches split across given robots')
     parser.add_argument('--batch_size', type=int, default=10, help='batch size for test loader (should be even for non-time test demo to work)')
+    parser.add_argument('--mode', type=str, default='train', help='mode to grab data from')
     parser.add_argument('--time_test', type=int, default=0, help='if value provided will run N timing tests')
     parser.add_argument('--load_steps', type=int, default=0, help='if value is provided will load <load_steps> steps')
     args = parser.parse_args()
-
-    if args.time_test:
-        _timing_test(args.time_test, args.path, args.batch_size)
-        exit(0)
 
     hparams = {'RNG': 0, 'ret_fnames': True, 'load_T': args.load_steps, 'sub_batch_size': 2, 'action_mismatch': 3, 'state_mismatch': 3, 'splits':[0.8, 0.1, 0.1]}
     if args.robots:
@@ -304,7 +289,12 @@ if __name__ == '__main__':
         loader = RoboNetDataset(args.batch_size, [meta_data[meta_data['robot'] == r] for r in args.robots], hparams=hparams)
     else:
         loader = RoboNetDataset(args.batch_size, args.path, hparams=hparams)
-    tensors = [loader[x] for x in ['images', 'states', 'actions', 'f_names']]
+    
+    if args.time_test:
+        _timing_test(args.time_test, loader)
+        exit(0)
+
+    tensors = [loader[x, args.mode] for x in ['images', 'states', 'actions', 'f_names']]
     s = tf.Session()
     out_tensors = s.run(tensors)
     
