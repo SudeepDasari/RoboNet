@@ -24,8 +24,8 @@ def default_loader_hparams():
     return {
             'target_adim': 4,
             'target_sdim': 5,
-            'state_mismatch': STATE_MISMATCH.ERROR,
-            'action_mismatch': ACTION_MISMATCH.ERROR,
+            'state_mismatch': STATE_MISMATCH.ERROR,     # TODO make better flag parsing
+            'action_mismatch': ACTION_MISMATCH.ERROR,   # TODO make better flag parsing
             'img_size': (48, 64),
             'cams_to_load': [0],
             'impute_autograsp_action': True,

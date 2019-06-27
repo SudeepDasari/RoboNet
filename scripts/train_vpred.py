@@ -46,6 +46,7 @@ if __name__ == '__main__':
     parser.add_argument('--robot', type=str, default='', help="robot data to train on (if only one robot is desired)")
     parser.add_argument('--action_primitive', type=str, default='', help="if flag is supplied only trajectories with metadata['primitive']==action_primitive will be considered")
     parser.add_argument('--filter_adim', type=int, default=0, help="if flag is supplied only trajectories with adim=filter_adim will be trained on")
+    parser.add_argument('--balance_robots', action='store_true', help='if flag is supplied batches will be balanced across robots')
     args = parser.parse_args()
 
     dataset_hparams = json_try_load(args.experiment_dir + '/dataset_hparams.json')
@@ -63,6 +64,7 @@ if __name__ == '__main__':
               'scalar_summary_freq': args.scalar_summary_freq,
               'robot': args.robot,
               'action_primitive': args.action_primitive,
+              'balance_across_robots': args.balance_robots,
               'filter_adim': args.filter_adim}
     
     if not args.name:
