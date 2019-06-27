@@ -43,11 +43,16 @@ class RoboNetDataset(BaseVideoDataset):
         output_format = tuple(output_format)
 
         self._data_loaders = {}
-        # DON'T WRITE THIS SECTION WITH A FOR LOOP DUE TO BUG WITH TENSORFLOW DATASET
+        # DON'T WRITE THIS SECTION WITH A FOR LOOP
+        # YOU MUST CALL next(generator) OR ELSE TENSORFLOW SOMETIMES CRASHES
+        # IF YOU KNOW WHY THESE BUGS HAPPENS YOU DESERVE A TURING AWARD
         # TRAIN
         if len(self._train_sources):
             n_train_ex = sum(len(f) for f in self._train_sources)
             train_generator = self._hdf5_generator(self._train_sources, self.train_rng, 'train')
+            for _ in range(100):
+                next(train_generator)
+                print('train', _)
             dataset = tf.data.Dataset.from_generator(lambda: train_generator, output_format)
             dataset = dataset.map(self._get_dict).prefetch(self._hparams.buffer_size)
             self._data_loaders['train'] = dataset.make_one_shot_iterator().get_next()
@@ -56,6 +61,9 @@ class RoboNetDataset(BaseVideoDataset):
 
         if len(self._val_sources):
             val_generator = self._hdf5_generator(self._val_sources, self.val_rng, 'val')
+            for _ in range(100):
+                next(val_generator)
+                print('val', _)
             dataset = tf.data.Dataset.from_generator(lambda: val_generator, output_format)
             dataset = dataset.map(self._get_dict).prefetch(max(int(self._hparams.buffer_size / 10), 1))
             self._data_loaders['val'] = dataset.make_one_shot_iterator().get_next()
@@ -64,6 +72,9 @@ class RoboNetDataset(BaseVideoDataset):
         
         if len(self._test_sources):
             test_generator = self._hdf5_generator(self._test_sources, self.test_rng, 'test')
+            for _ in range(10):
+                next(test_generator)
+                print('test', _)
             dataset = tf.data.Dataset.from_generator(lambda: test_generator, output_format)
             dataset = dataset.map(self._get_dict).prefetch(max(int(self._hparams.buffer_size / 10), 1))
             self._data_loaders['test'] = dataset.make_one_shot_iterator().get_next()
@@ -247,22 +258,26 @@ class RoboNetDataset(BaseVideoDataset):
 def _timing_test(N, path, batch_size):
     import time
     from robonet.datasets import load_metadata
-    
-    hparams = {'RNG': 0, 'ret_fnames': True, 'sub_batch_size': 2, 'action_mismatch': 3, 'state_mismatch': 3, 'splits':[0.8, 0.1, 0.1]}
+    import random
+
+    hparams = {'ret_fnames': True, 'sub_batch_size': 2, 'action_mismatch': 3, 'state_mismatch': 3, 'splits':[0.8, 0.1, 0.1]}
     meta_data = load_metadata(args.path)
     meta_data = meta_data[meta_data['adim'] == 4]
 
     loader = RoboNetDataset(batch_size, path, hparams)
-    tensors = [loader[x] for x in ['images', 'states', 'actions']]
+    mode_tensors = {}
+    for m in ['train', 'test', 'val']:
+        mode_tensors[m] = [loader[x, m] for x in ['images', 'states', 'actions']]
     s = tf.Session()
 
     timings = []
     for i in range(N):
+        m = random.choice(['train', 'test', 'val'])
         start = time.time()
-        s.run(tensors)
+        s.run(mode_tensors[m])
         timings.append(time.time() - start)
 
-        print('run {} took {} seconds'.format(i, timings[-1]))
+        print('run {}, mode {} took {} seconds'.format(i, m, timings[-1]))
     print('runs took on average {} seconds'.format(sum(timings) / len(timings)))
 
 
