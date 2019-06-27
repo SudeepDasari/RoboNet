@@ -8,6 +8,7 @@ import os
 from tensorflow.contrib.training import HParams
 from .util import pad_and_concat, render_dist
 import time
+import glob
 
 
 class VPredTrainable(Trainable):
@@ -62,6 +63,12 @@ class VPredTrainable(Trainable):
         self.saver = tf.train.Saver(max_to_keep=self._hparams.max_to_keep)
         self.sess = tf.Session()
         self.sess.run(tf.global_variables_initializer())
+        
+        if self._hparams.restore_dir:
+            meta_file = glob.glob(self._hparams.restore_dir + '/*.meta')
+            self._restore(meta_file[0])
+            self._restore_logs = False
+    
         print("parameter_count =", self.sess.run(parameter_count))
 
     def _extract_hparams(self, config):
@@ -85,6 +92,7 @@ class VPredTrainable(Trainable):
     def _default_hparams(self):
         default_dict = {
             'batch_size': 16,
+            'restore_dir': '',
             'data_directory': './',
             'n_gpus': 1,
             'pad_amount': 2,
@@ -96,7 +104,8 @@ class VPredTrainable(Trainable):
             'robot': '',
             'action_primitive': '',
             'filter_adim': 0,
-            'max_steps': 300000
+            'max_steps': 300000,
+            'balance_across_robots': False
         }
         return HParams(**default_dict)
 
@@ -107,15 +116,22 @@ class VPredTrainable(Trainable):
         """
         if self._hparams.action_primitive:
             metadata = metadata[metadata['primitives'] == self._hparams.action_primitive]
-        if self._hparams.robot:
-            metadata = metadata[metadata['robot'] == self._hparams.robot]
         if self._hparams.filter_adim:
             metadata = metadata[metadata['adim'] == self._hparams.filter_adim]
-        assert len(metadata), "no data matches filters!"
+        
+        if self._hparams.balance_across_robots:
+            assert not self._hparams.robot, "can't balance across a single robot"
+            unique_robots = metadata['robot'].frame.unique().tolist()
+            all_metadata = metadata
+            metadata = [all_metadata[all_metadata['robot'] == r] for r in unique_robots]
+            
+        if self._hparams.robot:
+            metadata = metadata[metadata['robot'] == self._hparams.robot]
+        
         return metadata
 
     def _get_input_targets(self, DatasetClass, metadata, dataset_hparams):
-        data_loader = DatasetClass(self._hparams.batch_size, metadata=metadata, hparams=dataset_hparams)
+        data_loader = DatasetClass(self._hparams.batch_size, metadata, dataset_hparams)
         assert data_loader.hparams.get('load_random_cam', False), "function assumes loader will grab one random camera feed in multi-cam object"
 
         tensor_names = ['actions', 'images', 'states']
@@ -179,7 +195,12 @@ class VPredTrainable(Trainable):
                 for key, value in metrics.items():
                     fetches['metric/{}/{}'.format(key, name)] = value
 
-        fetches['done'] = itr >= self._hparams.max_steps        
+        fetches['done'] = itr >= self._hparams.max_steps
+        
+        if self._hparams.restore_dir and not self._restore_logs:
+            fetches['restore_logs'] = self._hparams.restore_dir
+            self._restore_logs = True
+
         return fetches
 
     def _save(self, checkpoint_dir):

@@ -124,8 +124,14 @@ def get_metadata_frame(files):
         files = sorted(glob.glob('{}/*.hdf5'.format(files)))
         if os.path.exists('{}/meta_data.pkl'.format(base_path)):
             meta_data = pd.read_pickle('{}/meta_data.pkl'.format(base_path), compression='gzip')
-            # TODO check validity of meta-data
-            return meta_data
+            
+            registered_fnames = set([f for f in meta_data.index])
+            loaded_fnames = set([f.split('/')[-1] for f in files])
+
+            if loaded_fnames == registered_fnames:
+                return meta_data
+            os.remove('{}/meta_data.pkl'.format(base_path))
+            print('regenerating meta_data file!')
     elif isinstance(files, (list, tuple)):
         base_path=None
         files = sorted(files)
