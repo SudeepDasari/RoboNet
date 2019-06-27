@@ -170,7 +170,12 @@ class RoboNetDataset(BaseVideoDataset):
 
 def _timing_test(N, path, batch_size):
     import time
-    loader = RoboNetDataset(batch_size, path)
+    from robonet.datasets import load_metadata
+    meta_data = load_metadata(path)
+    metadata = meta_data[meta_data['robot'] == 'sawyer']
+    metadata = meta_data[meta_data['adim'] == 4]
+    print(metadata)
+    loader = RoboNetDataset(batch_size, metadata=metadata, hparams={'target_adim' : 4})
     tensors = [loader[x] for x in ['images', 'states', 'actions']]
     s = tf.Session()
 
