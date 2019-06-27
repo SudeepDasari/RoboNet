@@ -32,7 +32,27 @@ class RoboNetDataset(BaseVideoDataset):
 
         n_train_ex = 0
         self._train_sources, self._val_sources, self._test_sources = [[] for _ in range(3)]
-        self._init_sources()
+        
+        # smallest max step length of all dataset sources 
+        min_steps = min([min(min(m.frame['img_T']), min(m.frame['state_T'])) for m in self._metadata])
+        if not self._hparams.load_T:
+            self._hparams.load_T = min_steps
+        else:
+            assert self._hparams.load_T <= min_steps, "ask to load {} steps but some records only have {}!".format(self._hparams.min_T, min_steps)
+        source_files = [m.files for m in self._metadata]
+        [self.rng.shuffle(f) for f in source_files]
+
+        for files in source_files:
+            train_files, val_files, test_files = self._split_files(files)
+            if self._hparams.splits[0]:
+                assert len(train_files) > 0, "train files requested but non-given"
+                self._train_sources.append(train_files)
+            if self._hparams.splits[1]:
+                assert len(val_files) > 0, "val files requested but non-given"
+                self._val_sources.append(val_files)
+            if self._hparams.splits[2]:
+                assert len(test_files) > 0, "test files requested but non-given"
+                self._test_sources.append(test_files)
 
         output_format = [tf.uint8, tf.float32, tf.float32]        
         if self._hparams.load_annotations:
@@ -81,28 +101,6 @@ class RoboNetDataset(BaseVideoDataset):
             print('no test files')
 
         return n_train_ex
-    
-    def _init_sources(self):
-        # smallest max step length of all dataset sources 
-        min_steps = min([min(min(m.frame['img_T']), min(m.frame['state_T'])) for m in self._metadata])
-        if not self._hparams.load_T:
-            self._hparams.load_T = min_steps
-        else:
-            assert self._hparams.load_T <= min_steps, "ask to load {} steps but some records only have {}!".format(self._hparams.min_T, min_steps)
-        source_files = [m.files for m in self._metadata]
-        [self.rng.shuffle(f) for f in source_files]
-
-        for files in source_files:
-            train_files, val_files, test_files = self._split_files(files)
-            if self._hparams.splits[0]:
-                assert len(train_files) > 0, "train files requested but non-given"
-                self._train_sources.append(train_files)
-            if self._hparams.splits[1]:
-                assert len(val_files) > 0, "val files requested but non-given"
-                self._val_sources.append(val_files)
-            if self._hparams.splits[2]:
-                assert len(test_files) > 0, "test files requested but non-given"
-                self._test_sources.append(test_files)
 
     def _split_files(self, files):
         train_files, val_files, test_files = None, None, None
@@ -261,10 +259,11 @@ def _timing_test(N, loader):
         m = random.choice(['train', 'test', 'val'])
         start = time.time()
         s.run(mode_tensors[m])
+        run_time = time.time() - start
         if m == 'train':
-            timings.append(time.time() - start)
+            timings.append(run_time)
+        print('run {}, mode {} took {} seconds'.format(i, m, run_time))
 
-        print('run {}, mode {} took {} seconds'.format(i, m, timings[-1]))
     if timings:
         print('train runs took on average {} seconds'.format(sum(timings) / len(timings)))
 
