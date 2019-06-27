@@ -139,9 +139,6 @@ class RoboNetDataset(BaseVideoDataset):
         return HParams(**default_dict)
 
     def _hdf5_generator(self, sources, rng, mode):
-        sources = copy.deepcopy(sources)
-        metadata = copy.deepcopy(self._metadata)
-        
         n_workers = 1
         if self._hparams.all_modes_max_workers or mode == 'train':
             n_workers = max(1, int(self._batch_size // 2))
@@ -152,7 +149,7 @@ class RoboNetDataset(BaseVideoDataset):
         while True:
             file_hparams = [copy.deepcopy(self._hparams) for _ in range(self._batch_size)]
             if self._hparams.RNG:
-                file_rng = [rng.getrandbits(256) for _ in range(self._batch_size)]
+                file_rng = [rng.getrandbits(64) for _ in range(self._batch_size)]
             else:
                 file_rng = [None for _ in range(self._batch_size)]
             
@@ -168,7 +165,7 @@ class RoboNetDataset(BaseVideoDataset):
                 for sb in range(self._hparams.sub_batch_size):
                     selected_file = sources[selected_source][file_indices[selected_source]]
                     file_indices[selected_source] += 1
-                    selected_file_metadata = metadata[selected_source].get_file_metadata(selected_file)
+                    selected_file_metadata = self._metadata[selected_source].get_file_metadata(selected_file)
 
                     file_names.append(selected_file)
                     file_metadata.append(selected_file_metadata)
