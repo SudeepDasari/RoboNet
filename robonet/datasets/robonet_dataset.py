@@ -139,6 +139,7 @@ class RoboNetDataset(BaseVideoDataset):
         return HParams(**default_dict)
 
     def _hdf5_generator(self, sources, rng, mode):
+        
         n_workers = 1
         if self._hparams.all_modes_max_workers or mode == 'train':
             n_workers = max(1, int(self._batch_size // 2))
@@ -249,7 +250,7 @@ def _timing_test(N, path, batch_size):
     
     hparams = {'RNG': 0, 'ret_fnames': True, 'sub_batch_size': 2, 'action_mismatch': 3, 'state_mismatch': 3, 'splits':[0.8, 0.1, 0.1]}
     meta_data = load_metadata(args.path)
-    meta_data = meta_data[meta_data['robot'] == 'sawyer']
+    meta_data = meta_data[meta_data['adim'] == 4]
 
     loader = RoboNetDataset(batch_size, path, hparams)
     tensors = [loader[x] for x in ['images', 'states', 'actions']]
