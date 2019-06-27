@@ -70,10 +70,10 @@ def vpred_generator(num_gpus, graph_type, tpu_mode, model_inputs, model_targets,
     if mode == tf.estimator.ModeKeys.TRAIN:
         assert num_gpus == 1, "only single gpu training supported at the moment"
         global_step = tf.train.get_or_create_global_step()
-        optimizer = tf_utils.build_optimizer(hparams.lr, hparams.beta1, hparams.beta2, 
+        lr, optimizer = tf_utils.build_optimizer(hparams.lr, hparams.beta1, hparams.beta2, 
                                     decay_steps=hparams.decay_steps, 
                                     end_lr=hparams.end_lr,
-                                    global_step=global_step)[1]
+                                    global_step=global_step)
 
         gen_losses = OrderedDict()
         if not (hparams.l1_weight or hparams.l2_weight or hparams.vgg_cdist_weight):
@@ -83,7 +83,7 @@ def vpred_generator(num_gpus, graph_type, tpu_mode, model_inputs, model_targets,
         gen_images = outputs.get('gen_images_enc', outputs['gen_images'])
         target_images = targets['images']
         
-        scalar_summaries, tensor_summaries = {}, {'pred_frames': pred_frames}
+        scalar_summaries, tensor_summaries = {'learning_rate': lr}, {'pred_frames': pred_frames}
         
         if 'annotations' in model_inputs:
             tensor_summaries['pred_distrib'] = tf.transpose(outputs['gen_pix_distribs'], [1, 0, 2, 3, 4])

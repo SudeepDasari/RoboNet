@@ -8,18 +8,25 @@ import random
 
 
 class BaseVideoDataset(object):
-    def __init__(self, batch_size, path=None, metadata=None, hparams=dict()):
-        if (metadata is not None and path is not None) or (metadata is None and path is None):
-            raise ValueError('must supply either path to files or metadata frame')
-        elif path is not None:
-            assert isinstance(path, str), "path should be string to folder containing hdf5"
-            metadata = load_metadata(path)
-        elif metadata is not None:
-            assert isinstance(metadata, MetaDataContainer), "metadata frame type is incorrect. load from robonet.datasets.load_metadata"
-        
+    def __init__(self, batch_size, dataset_files_or_metadata, hparams=dict()):
+        assert isinstance(batch_size, int), "batch_size must be an integer"
+        self._batch_size = batch_size
+
+        if isinstance(dataset_files_or_metadata, str):
+            self._metadata = [load_metadata(dataset_files_or_metadata)]
+        elif isinstance(dataset_files_or_metadata, MetaDataContainer):
+            self._metadata = [dataset_files_or_metadata]
+        elif isinstance(dataset_files_or_metadata, (list, tuple)):
+            self._metadata = []
+            for d in dataset_files_or_metadata:
+                assert isinstance(d, (str, MetaDataContainer)), "potential dataset must be folder containing files or meta-data instance"
+                if isinstance(d, str):
+                    self._metadata.append(load_metadata(d))
+                else:
+                    self._metadata.append(d)
+
         # initialize hparams and store metadata_frame
         self._hparams = self._get_default_hparams().override_from_dict(hparams)
-        self._metadata = metadata
 
         # if RNG is not supplied then initialize new RNG
         self._random_generator = {}
@@ -29,10 +36,9 @@ class BaseVideoDataset(object):
             seeds = [i + self._hparams.RNG for i in range(len(seeds))]
         
         for k, seed in zip(self.modes + ['base'], seeds):
+            if k == 'train' and self._hparams.use_random_train_seed:
+                seed = None
             self._random_generator[k] = random.Random(seed)
-        
-        # assign batch size to private variable
-        self._batch_size = batch_size
         
         #initialize dataset
         self._num_ex_per_epoch = self._init_dataset()
@@ -47,7 +53,8 @@ class BaseVideoDataset(object):
     @staticmethod
     def _get_default_hparams():
         default_dict = {
-            'RNG', 11381294392481135266
+            'RNG': 11381294392481135266,
+            'use_random_train_seed': False
         }
         return HParams(**default_dict)
     

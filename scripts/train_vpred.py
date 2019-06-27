@@ -26,8 +26,11 @@ def trial_str_creator(trial):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--train_class', type=str, default='VPredTrainable', help='trainable type (specify for customizable train loop behavior)')
-    parser.add_argument("--input_dir", type=str, default='./', help="directory containing video prediction data")
-    parser.add_argument('--experiment_dir', type=str, default='./', help='directory containing model and dataset hparams')
+    parser.add_argument("--input_dir", type=str, required=True, help="directory containing video prediction data")
+    parser.add_argument("--upload_dir", type=str, default=None, help="if provided ray will sync files to given bucket dir")
+    parser.add_argument('--restore_dir', type=str, default='', help='ray will restore checkpoint and tensorboard events from given directory')
+    parser.add_argument('--experiment_dir', type=str, required=True, help='directory containing model and dataset hparams')
+    parser.add_argument('--name', type=str, default='', help='training experiment name')
     parser.add_argument('--save_freq', type=int, default=10000, help="how frequently to save model weights")
     parser.add_argument('--image_summary_freq', type=int, default=1000, help="how frequently to save image summaries")
     parser.add_argument('--scalar_summary_freq', type=int, default=100, help="how frequently to take validation summaries")
@@ -44,6 +47,7 @@ if __name__ == '__main__':
     parser.add_argument('--robot', type=str, default='', help="robot data to train on (if only one robot is desired)")
     parser.add_argument('--action_primitive', type=str, default='', help="if flag is supplied only trajectories with metadata['primitive']==action_primitive will be considered")
     parser.add_argument('--filter_adim', type=int, default=0, help="if flag is supplied only trajectories with adim=filter_adim will be trained on")
+    parser.add_argument('--balance_robots', action='store_true', help='if flag is supplied batches will be balanced across robots')
     args = parser.parse_args()
 
     dataset_hparams = json_try_load(args.experiment_dir + '/dataset_hparams.json')
@@ -51,6 +55,7 @@ if __name__ == '__main__':
     
     config = {'dataset_hparams': dataset_hparams,
               'model_hparams': model_hparams,
+              'restore_dir': args.restore_dir,
               'train_fraction': tune.grid_search(args.train_frac),
               'batch_size': tune.grid_search(args.batch_size),
               'val_fraction': tune.grid_search(args.val_frac),
@@ -60,18 +65,22 @@ if __name__ == '__main__':
               'scalar_summary_freq': args.scalar_summary_freq,
               'robot': args.robot,
               'action_primitive': args.action_primitive,
+              'balance_across_robots': args.balance_robots,
               'filter_adim': args.filter_adim}
 
+    if not args.name:
+        args.name = "{}_video_prediction_training".format(os.getlogin())
+
     exp = tune.Experiment(
-                name="video_prediction_training",   # todo fix this, there's no os.getlogin() on docker
-                # name="{}_video_prediction_training".format(os.getlogin()),
+                name=args.name,
                 run=get_trainable(args.train_class),
                 trial_name_creator=tune.function(trial_str_creator),
                 loggers=[GIFLogger],
                 config=config,
                 resources_per_trial= {"cpu": 1, "gpu": 1},
-                checkpoint_freq=args.save_freq)
-
+                checkpoint_freq=args.save_freq,
+                upload_dir=args.upload_dir)
+    
     redis_address = None
     if args.cluster:
         redis_address = ray.services.get_node_ip_address() + ':6379'

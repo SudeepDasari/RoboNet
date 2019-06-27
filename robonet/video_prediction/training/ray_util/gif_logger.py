@@ -3,10 +3,27 @@ from robonet.video_prediction.utils.encode_img import construct_image_tile
 from robonet.video_prediction.utils.ffmpeg_gif import encode_gif
 import numpy as np
 import tensorflow as tf
+import os
+import glob
+import shutil
 
 
 class GIFLogger(TFLogger):
     def on_result(self, result):
+        restore_dir = result.pop('restore_logs', False)
+        if restore_dir:
+            # close the old file_writer
+            self._file_writer.close()
+            
+            # copy log events to new directory
+            event_dir = restore_dir.split('/checkpoint')[0]
+            event_file = glob.glob('{}/events.out.*'.format(event_dir))[0]
+            new_path = '{}/{}'.format(self.logdir,event_file.split('/')[-1])
+            assert os.path.isfile(event_file), "even logs don't exist!"
+            shutil.copyfile(event_file, new_path)
+
+            # initialize a new file writer
+            self._file_writer = tf.summary.FileWriter(self.logdir)
         global_step = result['global_step']
 
         for k, v in result.items():

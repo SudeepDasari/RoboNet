@@ -24,11 +24,10 @@ def default_loader_hparams():
     return {
             'target_adim': 4,
             'target_sdim': 5,
-            'state_mismatch': STATE_MISMATCH.ERROR,
-            'action_mismatch': ACTION_MISMATCH.ERROR,
+            'state_mismatch': STATE_MISMATCH.ERROR,     # TODO make better flag parsing
+            'action_mismatch': ACTION_MISMATCH.ERROR,   # TODO make better flag parsing
             'img_size': (48, 64),
-            'load_random_cam': True,
-            'cams_to_load': (-1),
+            'cams_to_load': [0],
             'impute_autograsp_action': True,
             'load_annotations': False,
             'zero_if_missing_annotation': False, 
@@ -75,10 +74,10 @@ def load_states(file_pointer, meta_data, hparams):
 
     elif sdim < hparams.target_sdim and hparams.state_mismatch & STATE_MISMATCH.PAD_ZERO:
         pad = np.zeros((s_T, hparams.target_sdim - sdim), dtype=np.float32)
-        return np.concatenate((file_pointer['env']['state'][:], pad))
+        return np.concatenate((file_pointer['env']['state'][:], pad), axis=-1)
 
     elif sdim > hparams.target_sdim and hparams.state_mismatch & STATE_MISMATCH.CLEAVE:
-        return file_pointer['env']['state'][:][:, :sdim]
+        return file_pointer['env']['state'][:][:, :hparams.target_sdim]
 
     else:
         raise ValueError("file sdim - {}, target sdim - {}, pad behavior - {}".format(sdim, hparams.target_sdim, hparams.state_mismatch))
@@ -101,14 +100,14 @@ def load_actions(file_pointer, meta_data, hparams):
                 action_append[t, 0] = high_val
             else:
                 action_append[t, 0] = low_val
-        return np.concatenate((old_actions, action_append))
+        return np.concatenate((old_actions, action_append), axis=-1)
 
     elif adim < hparams.target_adim and hparams.action_mismatch & ACTION_MISMATCH.PAD_ZERO:
         pad = np.zeros((a_T, hparams.target_adim - adim), dtype=np.float32)
-        return np.concatenate((file_pointer['policy']['actions'][:], pad))
+        return np.concatenate((file_pointer['policy']['actions'][:], pad), axis=-1)
 
     elif adim > hparams.target_adim and hparams.action_mismatch & ACTION_MISMATCH.CLEAVE:
-        return file_pointer['policy']['actions'][:][:, :adim]
+        return file_pointer['policy']['actions'][:][:, :hparams.target_adim]
 
     else:
         raise ValueError("file adim - {}, target adim - {}, pad behavior - {}".format(adim, hparams.target_adim, hparams.action_mismatch))
@@ -135,16 +134,12 @@ def load_annotations(file_pointer, metadata, hparams, cams_to_load):
     return annot
 
 
-def load_data(inputs, hparams):
-    if len(inputs) == 2:
-        f_name, file_metadata = inputs
-        rng = None
-    else:
-        rng, f_name, file_metadata = inputs
+def load_data(f_name, file_metadata, hparams, rng=None):
     rng = random.Random(rng)
 
     assert os.path.exists(f_name) and os.path.isfile(f_name), "invalid f_name"
-    buf = open(f_name, 'rb').read()
+    with open(f_name, 'rb') as f:
+        buf = f.read()
     assert hashlib.sha256(buf).hexdigest() == file_metadata['sha256'], "file hash doesn't match meta-data"
     
     with h5py.File(io.BytesIO(buf)) as hf:
@@ -154,26 +149,18 @@ def load_data(inputs, hparams):
             start_time = rng.randint(0, n_states - hparams.load_T)
             n_states = hparams.load_T
 
-        # load cameras
-        if hparams.load_random_cam:
-            rand_cam = rng.randint(0, file_metadata['ncam'] - 1)
-            images = load_camera_imgs(rand_cam, hf, file_metadata, hparams.img_size, start_time, n_states)
-            selected_cams = [rand_cam]
-        else:
-            assert all([i < file_metadata['ncam'] for i in hparams.cams_to_load]), "cams_to_load out of bounds!"
-            images, selected_cams = [], []
-            for cam_index in hparams.cams_to_load:
-                images.append(load_camera_imgs(cam_index, hf, file_metadata, hparams.img_size, start_time, n_states)[None])
-                selected_cams.append(cam_index)
-            images = np.swapaxes(np.concatenate(images, 0), 0, 1)
+        assert all([0 <= i < file_metadata['ncam'] for i in hparams.cams_to_load]), "cams_to_load out of bounds!"
+        images, selected_cams = [], []
+        for cam_index in hparams.cams_to_load:
+            images.append(load_camera_imgs(cam_index, hf, file_metadata, hparams.img_size, start_time, n_states)[None])
+            selected_cams.append(cam_index)
+        images = np.swapaxes(np.concatenate(images, 0), 0, 1)
 
         actions = load_actions(hf, file_metadata, hparams).astype(np.float32)[start_time:start_time + n_states-1]
         states = load_states(hf, file_metadata, hparams).astype(np.float32)[start_time:start_time + n_states]
 
         if hparams.load_annotations:
             annotations = load_annotations(hf, file_metadata, hparams, selected_cams)[start_time:start_time + n_states]
-            if hparams.load_random_cam:
-                annotations = annotations[:, 0]
             return images, actions, states, annotations
 
     return images, actions, states

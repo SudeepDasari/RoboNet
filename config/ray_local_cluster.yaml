@@ -1,6 +1,6 @@
 cluster_name: default
 min_workers: 1
-max_workers: 2
+max_workers: 4
 docker:
     image: ""
     container_name: ""
@@ -9,7 +9,7 @@ idle_timeout_minutes: 5
 provider:
     type: local
     head_ip: deepthought
-    worker_ips: [newton5, newton1]
+    worker_ips: [newton5]
 auth:
     ssh_user: sudeep
     ssh_private_key: ~/.ssh/id_rsa
