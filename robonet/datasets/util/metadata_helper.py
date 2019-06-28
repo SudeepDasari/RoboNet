@@ -78,7 +78,8 @@ def load_metadata_dict(fname):
     buf = open(fname, 'rb').read()
 
     with h5py.File(io.BytesIO(buf)) as hf:
-        meta_data_dict = {}
+        meta_data_dict = {'file_version': hf['file_version'][()]}
+
         meta_data_dict['sha256'] = hashlib.sha256(buf).hexdigest()
         meta_data_dict['sdim'] = hf['env']['state'].shape[1]
         meta_data_dict['state_T'] = hf['env']['state'].shape[0]
@@ -90,13 +91,15 @@ def load_metadata_dict(fname):
         n_cams = hf['env'].attrs.get('n_cams', 0)
         if n_cams:
             meta_data_dict['ncam'] = n_cams
-            meta_data_dict['frame_dim'] = hf['env']['cam0_video']['frames'].attrs['shape'][:2]
 
-            # TODO remove second condition and get condition after datasets are re-generated
-            if hf['env'].attrs.get('cam_encoding', 'jpg') == 'mp4' or 'T' in hf['env']['cam0_video']['frames'].attrs:
+            if hf['env'].attrs['cam_encoding'] == 'mp4':
+                meta_data_dict['frame_dim'] = hf['env']['cam0_video']['frames'].attrs['shape'][:2]
                 meta_data_dict['img_T'] = hf['env']['cam0_video']['frames'].attrs['T']
                 meta_data_dict['img_encoding'] = 'mp4'
+                meta_data_dict['image_format'] = hf['env']['cam0_video']['frames'].attrs['image_format']
             else:
+                meta_data_dict['frame_dim'] = hf['env']['cam0_video']['frame0'].attrs['shape'][:2]
+                meta_data_dict['image_format'] = hf['env']['cam0_video']['frame0'].attrs['image_format']
                 meta_data_dict['img_encoding'] = 'jpg'
                 meta_data_dict['img_T'] = len(hf['env']['cam0_video'])
 
