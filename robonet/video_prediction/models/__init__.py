@@ -8,5 +8,8 @@ def get_model_fn(class_name):
     elif class_name == 'stochastic':
         from .stochastic_generator import vpred_generator
         return vpred_generator
+    elif class_name == 'det_embedding':
+        from .deterministc_embedding_generator import deterministic_embedding_generator
+        return deterministic_embedding_generator
     else:
         raise NotImplementedError

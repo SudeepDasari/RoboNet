@@ -18,43 +18,13 @@ class VPredTrainable(Trainable):
         DatasetClass, model_fn = get_dataset_class(dataset_hparams.pop('dataset')), get_model_fn(model_hparams.pop('model'))
 
         metadata = self._filter_metadata(load_metadata(config['data_directory']))
-        if model_hparams['num_domains'] == 1:
-            # dataset = DatasetClass(config.pop('batch_size'), metadata=metadata, hparams=dataset_hparams)
-            print('loaded dataset!')
-            inputs, targets = self._get_input_targets(DatasetClass, metadata, dataset_hparams)
-        else:
-            self._tensor_multiplexers = []
-            self._real_images = []
-            batch_size = config.pop('batch_size')
-            input_images, input_actions, input_states, target_images, target_states = [], [], [], [], []
 
-            domains = ['sudri0', 'sudri1', 'sudri2', 'sudri4', 'vestri_table0', 'vestri_table1', 'vestri_table2', 'vestri_table3']
-            for i in range(model_hparams['num_domains']):
-                mod_metadata = metadata[metadata['camera_configuration'] == domains[i]]
-                # dataset = DatasetClass(batch_size, metadata=mod_metadata, hparams=dataset_hparams)
-                print('loaded dataset!')
+        self._tensor_multiplexers = []
+        self._real_images = []
+        inputs, targets = self._get_input_targets(DatasetClass, metadata, dataset_hparams)
 
-                inputs, targets = self._get_input_targets(DatasetClass, mod_metadata, dataset_hparams)
-                input_images.append(inputs['images'])
-                input_actions.append(inputs['actions'])
-                input_states.append(inputs['states'])
-                target_images.append(targets['images'])
-                target_states.append(targets['states'])
+        self._real_images = tf.concat(self._real_images, axis=0)
 
-            input_images = tf.concat(input_images, axis=0)
-            input_actions = tf.concat(input_actions, axis=0)
-            input_states = tf.concat(input_states, axis=0)
-            target_images = tf.concat(target_images, axis=0)
-            target_states = tf.concat(target_states, axis=0)
-            inputs = {'images': input_images, 'actions': input_actions, 'states': input_states}
-            targets = {'images': target_images, 'states': target_states}
-
-            self._train_feed_dict, self._val_feed_dict = {}, {}
-            for t in self._tensor_multiplexers:
-                self._train_feed_dict.update(t.train)
-                self._val_feed_dict.update(t.val)
-
-            self._real_images = tf.concat(self._real_images, axis=0)
         self._estimator, self._scalar_metrics, self._tensor_metrics = model_fn(self._hparams.n_gpus, self._hparams.graph_type, 
                                                     False, inputs, targets, tf.estimator.ModeKeys.TRAIN, model_hparams)
         self._parameter_count = parameter_count = tf.reduce_sum([tf.reduce_prod(tf.shape(v)) for v in tf.trainable_variables()])
@@ -76,7 +46,10 @@ class VPredTrainable(Trainable):
         Grabs and (optionally) modifies hparams
         """
         dataset_hparams, model_hparams = config.pop('dataset_hparams', {}), config.pop('model_hparams', {})
+        if 'sub_batch_size' in dataset_hparams:
+            model_hparams['sub_batch_size'] = dataset_hparams['sub_batch_size']
         hparams = self._default_hparams().override_from_dict(config)
+        model_hparams['batch_size'] = hparams.batch_size
         hparams.graph_type = model_hparams.pop('graph_type')                      # required key which tells model which graph to load
         assert hparams.max_steps > 0, "max steps must be positive!"
 

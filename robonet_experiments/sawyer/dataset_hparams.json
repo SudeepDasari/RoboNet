@@ -1,7 +1,5 @@
 {
     "dataset": "RoboNet",
     "buffer_size":256,
-    "load_T": 15,
-    "sub_batch_sizes": 4,
-    "same_cam_across_sub_batch": true
+    "load_T": 15
 }

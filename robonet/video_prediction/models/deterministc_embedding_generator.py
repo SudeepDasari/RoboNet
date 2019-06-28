@@ -11,7 +11,7 @@ from collections import OrderedDict
 from robonet.video_prediction import losses
 from robonet.video_prediction.ops import lrelu, dense, pad2d, conv2d, conv_pool2d, flatten, tile_concat, pool2d, get_norm_layer
 from tensorflow.python.util import nest
-
+from robonet.video_prediction.models.stochastic_generator import create_n_layer_encoder
 
 def loss_default_hparams(graph_class):
     return {
@@ -28,96 +28,100 @@ def loss_default_hparams(graph_class):
         'state_weight': 0.0,
         'tv_weight': 0.001,
         'action_weight': 1.0,
-        'zat_kl_weight': 0.001,
-        'zr_kl_weight': 0.001   # if nonzero, model infers zr from image pairs and actions (if we want to generalize to new domain at test time)
-                                # otherwise, model maintains independent zrs (no generalization to new domain at test time)
     }
 
 
-def create_n_layer_encoder(inputs,
-                           nz=8,
-                           nef=64,
-                           n_layers=3,
-                           norm_layer='instance',
-                           stochastic=True):
-    norm_layer = get_norm_layer(norm_layer)
-    layers = []
-    paddings = [[0, 0], [1, 1], [1, 1], [0, 0]]
+def onestep_encoder_fn(targets, hparams=None):
+    image_pairs = tf.concat([targets['images'][:-1], targets['images'][1:]], axis=-1)
 
-    with tf.variable_scope("layer_1"):
-        convolved = conv2d(tf.pad(inputs, paddings), nef, kernel_size=4, strides=2, padding='VALID')
-        rectified = lrelu(convolved, 0.2)
-        layers.append(rectified)
+    targets = tile_concat([image_pairs, targets['actions'][:-1][:,:, None, None]], axis=-1)
 
-    for i in range(1, n_layers):
-        with tf.variable_scope("layer_%d" % (len(layers) + 1)):
-            out_channels = nef * min(2**i, 4)
-            convolved = conv2d(tf.pad(layers[-1], paddings), out_channels, kernel_size=4, strides=2, padding='VALID')
-            normalized = norm_layer(convolved)
-            rectified = lrelu(normalized, 0.2)
-            layers.append(rectified)
+    assert targets.shape.ndims == 5
 
-    pooled = pool2d(rectified, rectified.shape[1:3].as_list(), padding='VALID', pool_mode='avg')
-    squeezed = tf.squeeze(pooled, [1, 2])
-
-    if stochastic:
-        with tf.variable_scope('z_mu'):
-            z_mu = dense(squeezed, nz)
-        with tf.variable_scope('z_log_sigma_sq'):
-            z_log_sigma_sq = dense(squeezed, nz)
-            z_log_sigma_sq = tf.clip_by_value(z_log_sigma_sq, -10, 10)
-        outputs = {'enc_zs_mu': z_mu, 'enc_zs_log_sigma_sq': z_log_sigma_sq}
-    else:
-        outputs = squeezed
-    return outputs
-
-
-def create_encoder(inputs, nz):
-    assert inputs.shape.ndims == 5
-    batch_shape = inputs.shape[:-3].as_list()
-    inputs = flatten(inputs, 0, len(batch_shape) - 1)
+    batch_shape = targets.shape[:-3].as_list()
+    targets = flatten(targets, 0, len(batch_shape) - 1)
     unflatten = lambda x: tf.reshape(x, batch_shape + x.shape.as_list()[1:])
-    outputs = create_n_layer_encoder(inputs, nz=nz)
-    outputs = nest.map_structure(unflatten, outputs)
-    return outputs
+    outputs = create_n_layer_encoder(targets, stochastic=hparams.stochastic)
+    return nest.map_structure(unflatten, outputs)
 
 
-def encoder_fn(inputs, targets, hparams=None):
-    image_pairs = tf.concat([inputs['images'], targets['images']], axis=-1)
-    if 'actions' in inputs:
-        image_pairs = tile_concat([image_pairs,
-                                   tf.expand_dims(tf.expand_dims(inputs['actions'], axis=-2), axis=-2)], axis=-1)
-    outputs = create_encoder(image_pairs, nz=hparams.zr_dim)
-    return outputs
+def split_model_inference(inputs, targets, params):
+    """
+    we use separate trajectories for the encoder than from the ones used for prediction training
+    :param inputs: dict with tensors in *time-major*
+    :param targets:dict with tensors in *time-major*
+    :return:
+    """
+    def split(inputs, bs, sbs):
+        first_half = {}
+        second_half = {}
+        for key, value in inputs.items():
+            first_half[key] = []
+            second_half[key] = []
+            for i in range(bs // sbs):
+                first_half[key].append(value[:, sbs * i:sbs * i + sbs // 2])
+                second_half[key].append(value[:, sbs * i + sbs // 2:sbs * (i + 1)])
+            first_half[key] = tf.concat(first_half[key], 1)
+            second_half[key] = tf.concat(second_half[key], 1)
+        return first_half, second_half
+
+    sbs = params.sub_batch_size
+    bs = params.batch_size
+    inputs_train, inputs_inference = split(inputs, bs, sbs)
+    targets_train, targets_inference = split(targets, bs, sbs)
+
+    return {'train':inputs_train, 'inference':inputs_inference}, \
+           {'train':targets_train, 'inference':targets_inference}
 
 
-def vpred_generator(num_gpus, graph_type, tpu_mode, inputs, targets, mode, params):
+def average_and_repeat(enc, params, tlen):
+    """
+    :param enc:  time, batch, z_dim
+    :param params:
+    :param tlen: length of horizon
+    :return: e in time-major
+    """
+    enc = tf.reduce_mean(enc, axis=0)   # average over time dimension
+    hsbs = params.sub_batch_size // 2
+    bs = params.batch_size
+    e = []
+    for i in range(bs // params.sub_batch_size):
+        averaged = tf.reduce_mean(enc[i*hsbs: (i+1)*hsbs], axis=0)  # average over sub-batch dimension
+        averaged = tf.tile(averaged[None], [hsbs, 1])  # tile across sub-batch
+        e.append(averaged)
+    e = tf.concat(e, axis=0)
+    e = tf.tile(e[None], [tlen, 1, 1])
+    return e
+
+
+def deterministic_embedding_generator(num_gpus, graph_type, tpu_mode, inputs, targets, mode, params):
     # get graph class and setup default hyper-parameters
     logger = logging.getLogger(__name__)
     graph_class = get_graph_class(graph_type)
     default_hparams = dict(itertools.chain(graph_class.default_hparams().items(), loss_default_hparams(graph_class).items()))
     hparams = HParams(**default_hparams).override_from_dict(params)
 
-    # prep inputs here
-    inputs['actions'], inputs['images'] = tf.transpose(inputs['actions'], [1, 0, 2]), tf.transpose(inputs['images'], [1, 0, 2, 3, 4])
-    if hparams.zr_kl_weight:
-        outputs_enc = encoder_fn(inputs, {'images': tf.transpose(targets['images'][:, 1:], [1, 0, 2, 3, 4])}, hparams)
+    # prep inputs here, convert to time-major
+    inputs['actions'], inputs['images'], inputs['states'] = tf.transpose(inputs['actions'], [1, 0, 2]), tf.transpose(inputs['images'], [1, 0, 2, 3, 4]), tf.transpose(inputs['states'], [1,0,2])
+    targets['images'], targets['states'] = tf.transpose(targets['images'], [1, 0, 2, 3, 4]), tf.transpose(targets['states'], [1,0,2])
+
+    tlen = inputs['images'].get_shape().as_list()[0]
+    inputs, targets = split_model_inference(inputs, targets, hparams)
+
+    if hparams.encoder == 'one_step':
+        outputs_enc = onestep_encoder_fn(inputs['inference'], hparams)
+        hparams.e_dim = outputs_enc.get_shape().as_list()[2]
+        outputs_enc = average_and_repeat(outputs_enc, hparams, tlen)
     else:
-        outputs_enc = None
-    targets['images'] = tf.transpose(targets['images'][:, hparams.context_frames:], [1, 0, 2, 3, 4])
-    if hparams.use_states:
-        inputs['states'] = tf.transpose(inputs['states'][:, hparams.context_frames:], [1, 0, 2])
-        if hparams.state_weight:
-            targets['states'] = tf.transpose(targets['state'], [1, 0, 2])
-        else:
-            logger.warning('states supplied but state_weight=0 so no loss will be computed on predicted states')
-    elif hparams.state_weight > 0:
-        raise ValueError("states not supplied but state_weight > 0")
+        raise NotImplementedError
+
+    #convert back to batch-major
+    target_images = tf.transpose(targets['train']['images'][:, hparams.context_frames:], [1, 0, 2, 3, 4])
 
     # build the graph
     model_graph = graph_class()
     if num_gpus == 1:
-        outputs = model_graph.build_graph(inputs, hparams, outputs_enc=outputs_enc)
+        outputs = model_graph.build_graph(inputs['train'], hparams, outputs_enc=outputs_enc)
     else:
         # TODO: add multi-gpu evaluation support
         raise NotImplementedError
@@ -138,7 +142,6 @@ def vpred_generator(num_gpus, graph_type, tpu_mode, inputs, targets, mode, param
             raise ValueError
         
         gen_images = outputs.get('gen_images_enc', outputs['gen_images'])
-        target_images = targets['images']
 
         scalar_summaries, tensor_summaries = {}, {'pred_frames': pred_frames}
         
@@ -195,16 +198,6 @@ def vpred_generator(num_gpus, graph_type, tpu_mode, inputs, targets, mode, param
             gen_action_loss = losses.l2_loss(gen_actions, target_actions)
             gen_losses["gen_action_loss"] = (gen_action_loss, hparams.action_weight)
             scalar_summaries['action_loss'] = gen_action_loss
-
-        if hparams.zat_kl_weight:   # TODO: add annealing
-            gen_zat_kl_loss = losses.kl_loss(outputs['zat_mu'], outputs['zat_log_sigma_sq'])
-            gen_losses["zat_kl_loss"] = (gen_zat_kl_loss, hparams.zat_kl_weight)  # possibly annealed kl_weight
-            scalar_summaries['zat_kl_loss'] = gen_zat_kl_loss
-
-        if hparams.zr_kl_weight:    # TODO: add annealing
-            gen_zr_kl_loss = losses.kl_loss(outputs['zr_mu'], outputs['zr_log_sigma_sq'])
-            gen_losses["gen_zr_kl_loss"] = (gen_zr_kl_loss, hparams.zr_kl_weight)  # possibly annealed kl_weight
-            scalar_summaries['gen_zr_kl_loss'] = gen_zr_kl_loss
 
         loss = sum(loss * weight for loss, weight in gen_losses.values())
         g_gradvars = optimizer.compute_gradients(loss, var_list=model_graph.vars)
