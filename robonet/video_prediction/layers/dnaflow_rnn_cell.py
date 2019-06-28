@@ -219,13 +219,6 @@ class VPredCell(tf.nn.rnn_cell.RNNCell):
             output_size['transformed_pix_distribs'] = tf.TensorShape([height, width, num_motions, num_masks])
         if 'states' in inputs:
             output_size['gen_states'] = inputs['states'].shape[2:]
-        if 'zrs' in inputs:
-            output_size['zat_mu'] = self.hparams.za_dim
-            output_size['zat_log_sigma_sq'] = self.hparams.za_dim
-            output_size['gen_actions'] = inputs['actions'].shape[-1].value
-        if 'zr_mu' in inputs and 'zr_log_sigma_sq' in inputs:
-            output_size['zr_mu'] = self.hparams.zr_dim
-            output_size['zr_log_sigma_sq'] = self.hparams.zr_dim
         if self.hparams.transformation == 'flow':
             output_size['gen_flows'] = tf.TensorShape([height, width, 2, self.hparams.last_frames * self.hparams.num_transformed_images])
             output_size['gen_flows_rgb'] = tf.TensorShape([height, width, 3, self.hparams.last_frames * self.hparams.num_transformed_images])
@@ -348,18 +341,13 @@ class VPredCell(tf.nn.rnn_cell.RNNCell):
 
         state_action = []
         state_action_z = []
-        state_action_zr = []
         if 'actions' in inputs:
             state_action.append(inputs['actions'])
             state_action_z.append(inputs['actions'])
-            state_action_zr.append(inputs['actions'])
         if 'states' in inputs:
             state_action.append(state)
             # don't backpropagate the convnet through the state dynamics
             state_action_z.append(tf.stop_gradient(state))
-            state_action_zr.append(tf.stop_gradient(state))
-        if 'zrs' in inputs:
-            state_action_zr.append(inputs['zrs'])
 
         def concat(tensors, axis):
             if len(tensors) == 0:
@@ -370,22 +358,6 @@ class VPredCell(tf.nn.rnn_cell.RNNCell):
                 return tf.concat(tensors, axis=axis)
         state_action = concat(state_action, axis=-1)
         state_action_z = concat(state_action_z, axis=-1)
-        state_action_zr = concat(state_action_zr, axis=-1)
-
-        if 'zrs' in inputs:
-            with tf.variable_scope('zat_mu'):
-                zat_mu = dense(state_action_zr, self._output_size['zat_mu'])
-
-            with tf.variable_scope('zat_log_sigma_sq'):
-                zat_log_sigma_sq = dense(state_action_zr, self._output_size['zat_log_sigma_sq'])
-                zat_log_sigma_sq = tf.clip_by_value(zat_log_sigma_sq, -10, 10)
-
-            eps = tf.random_normal(tf.shape(zat_mu))
-            zat = zat_mu + eps * tf.sqrt(tf.exp(zat_log_sigma_sq))
-            zr_zat = concat([inputs['zrs'], zat], axis=-1)
-            with tf.variable_scope('gen_actions'):
-                gen_action = dense(zr_zat, self._output_size['gen_actions'])
-
         if 'actions' in inputs:
             gen_input = tile_concat([image, inputs['actions'][:, None, None, :]], axis=-1)
         else:
@@ -402,10 +374,7 @@ class VPredCell(tf.nn.rnn_cell.RNNCell):
                     h = layers[-1][-1]
                     kernel_size = (3, 3)
                 if self.hparams.where_add == 'all' or (self.hparams.where_add == 'input' and i == 0):
-                    if 'zrs' in inputs:
-                        h = tile_concat([h, zr_zat[:, None, None, :]], axis=-1)
-                    else:
-                        h = tile_concat([h, state_action_z[:, None, None, :]], axis=-1)
+                    h = tile_concat([h, state_action_z[:, None, None, :]], axis=-1)
                 h = downsample_layer(h, out_channels, kernel_size=kernel_size, strides=(2, 2))
                 h = norm_layer(h)
                 h = tf.nn.relu(h)
@@ -413,10 +382,7 @@ class VPredCell(tf.nn.rnn_cell.RNNCell):
                 conv_rnn_state = conv_rnn_states[len(new_conv_rnn_states)]
                 with tf.variable_scope('%s_h%d' % (self.hparams.conv_rnn, i)):
                     if self.hparams.where_add == 'all':
-                        if 'zrs' in inputs:
-                            conv_rnn_h = tile_concat([h, zr_zat[:, None, None, :]], axis=-1)
-                        else:
-                            conv_rnn_h = tile_concat([h, state_action_z[:, None, None, :]], axis=-1)
+                        conv_rnn_h = tile_concat([h, state_action_z[:, None, None, :]], axis=-1)
                     else:
                         conv_rnn_h = h
                     conv_rnn_h, conv_rnn_state = self._conv_rnn_func(conv_rnn_h, conv_rnn_state, out_channels)
@@ -431,10 +397,7 @@ class VPredCell(tf.nn.rnn_cell.RNNCell):
                 else:
                     h = tf.concat([layers[-1][-1], layers[num_encoder_layers - i - 1][-1]], axis=-1)
                 if self.hparams.where_add == 'all' or (self.hparams.where_add == 'middle' and i == 0):
-                    if 'zrs' in inputs:
-                        h = tile_concat([h, zr_zat[:, None, None, :]], axis=-1)
-                    else:
-                        h = tile_concat([h, state_action_z[:, None, None, :]], axis=-1)
+                    h = tile_concat([h, state_action_z[:, None, None, :]], axis=-1)
                 h = upsample_layer(h, out_channels, kernel_size=(3, 3), strides=(2, 2))
                 h = norm_layer(h)
                 h = tf.nn.relu(h)
@@ -442,10 +405,7 @@ class VPredCell(tf.nn.rnn_cell.RNNCell):
                 conv_rnn_state = conv_rnn_states[len(new_conv_rnn_states)]
                 with tf.variable_scope('%s_h%d' % (self.hparams.conv_rnn, len(layers))):
                     if self.hparams.where_add == 'all':
-                        if 'zrs' in inputs:
-                            conv_rnn_h = tile_concat([h, zr_zat[:, None, None, :]], axis=-1)
-                        else:
-                            conv_rnn_h = tile_concat([h, state_action_z[:, None, None, :]], axis=-1)
+                        conv_rnn_h = tile_concat([h, state_action_z[:, None, None, :]], axis=-1)
                     else:
                         conv_rnn_h = h
                     conv_rnn_h, conv_rnn_state = self._conv_rnn_func(conv_rnn_h, conv_rnn_state, out_channels)
@@ -585,13 +545,6 @@ class VPredCell(tf.nn.rnn_cell.RNNCell):
             outputs['transformed_pix_distribs'] = tf.stack(transformed_pix_distribs, axis=-1)
         if 'states' in inputs:
             outputs['gen_states'] = gen_state
-        if 'zrs' in inputs:
-            outputs['zat_mu'] = zat_mu
-            outputs['zat_log_sigma_sq'] = zat_log_sigma_sq
-            outputs['gen_actions'] = gen_action
-        if 'zr_mu' in inputs and 'zr_log_sigma_sq' in inputs:
-            outputs['zr_mu'] = inputs['zr_mu']
-            outputs['zr_log_sigma_sq'] = inputs['zr_log_sigma_sq']
         if self.hparams.transformation == 'flow':
             outputs['gen_flows'] = flows
             flows_transposed = tf.transpose(flows, [0, 1, 2, 4, 3])

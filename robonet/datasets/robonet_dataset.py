@@ -290,13 +290,12 @@ if __name__ == '__main__':
         loader = RoboNetDataset(args.batch_size, [meta_data[meta_data['robot'] == r] for r in args.robots], hparams=hparams)
     else:
         loader = RoboNetDataset(args.batch_size, args.path, hparams=hparams)
-   
+    
     if args.time_test:
         _timing_test(args.time_test, loader)
         exit(0)
 
     tensors = [loader[x, args.mode] for x in ['images', 'states', 'actions', 'f_names']]
-
     s = tf.Session()
     out_tensors = s.run(tensors)
     
