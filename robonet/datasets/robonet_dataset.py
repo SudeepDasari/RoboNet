@@ -70,7 +70,7 @@ class RoboNetDataset(BaseVideoDataset):
         # TRAIN
         n_workers = min(self._batch_size, multiprocessing.cpu_count())
         if self._hparams.pool_workers:
-            n_workers = min(self._hparams.pool_workers, n_workers)
+            n_workers = min(self._hparams.pool_workers, multiprocessing.cpu_count())
         self._pool = multiprocessing.Pool(n_workers)
 
         if len(self._train_sources):
@@ -138,7 +138,7 @@ class RoboNetDataset(BaseVideoDataset):
             'splits': (0.9, 0.05, 0.05),             # train, val, test
             'num_epochs': None,                      # maximum number of epochs (None if iterate forever)
             'ret_fnames': False,                     # return file names of loaded hdf5 record
-            'buffer_size': 1,                        # examples to prefetch
+            'buffer_size': 10,                        # examples to prefetch
             'all_modes_max_workers': True,           # use multi-threaded workers regardless of the mode
             'load_random_cam': True,                 # load a random camera for each example
             'same_cam_across_sub_batch': False,      # same camera across sub_batches
