@@ -5,6 +5,7 @@ import numpy as np
 import tensorflow as tf
 import copy
 import multiprocessing
+import pdb
 
 
 def _load_data(inputs):
@@ -276,13 +277,13 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="calculates or loads meta_data frame")
     parser.add_argument('path', help='path to files containing hdf5 dataset')
     parser.add_argument('--robots', type=str, nargs='+', default=None, help='will construct a dataset with batches split across given robots')
-    parser.add_argument('--batch_size', type=int, default=10, help='batch size for test loader (should be even for non-time test demo to work)')
+    parser.add_argument('--batch_size', type=int, default=32, help='batch size for test loader (should be even for non-time test demo to work)')
     parser.add_argument('--mode', type=str, default='train', help='mode to grab data from')
     parser.add_argument('--time_test', type=int, default=0, help='if value provided will run N timing tests')
     parser.add_argument('--load_steps', type=int, default=0, help='if value is provided will load <load_steps> steps')
     args = parser.parse_args()
 
-    hparams = {'RNG': 0, 'ret_fnames': True, 'load_T': args.load_steps, 'sub_batch_size': 2, 'action_mismatch': 3, 'state_mismatch': 3, 'splits':[0.8, 0.1, 0.1]}
+    hparams = {'RNG': 0, 'ret_fnames': True, 'load_T': args.load_steps, 'sub_batch_size': 8, 'action_mismatch': 3, 'state_mismatch': 3, 'splits':[0.8, 0.1, 0.1], 'same_cam_across_sub_batch':True}
     if args.robots:
         from robonet.datasets import load_metadata
         meta_data = load_metadata(args.path)

@@ -5,6 +5,7 @@ import tensorflow as tf
 from robonet.video_prediction.utils import tf_utils
 
 from robonet.video_prediction.layers.deterministic_embedding_rnn_cell import DetVPredCell
+import pdb
 
 class DeterministicWrapper(BaseGraph):
     def build_graph(self, inputs, hparams, outputs_enc=None, scope_name='dnaflow_generator'):
@@ -25,7 +26,7 @@ class DeterministicWrapper(BaseGraph):
             cell = DetVPredCell(inputs, hparams)
             outputs, _ = tf.nn.dynamic_rnn(cell, inputs, dtype=tf.float32,
                                     swap_memory=False, time_major=True)
-        
+
             outputs = {name: output[hparams.context_frames - 1:] for name, output in outputs.items()}
             outputs['ground_truth_sampling_mean'] = tf.reduce_mean(tf.to_float(cell.ground_truth[hparams.context_frames:]))
         return outputs

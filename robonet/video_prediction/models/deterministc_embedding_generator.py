@@ -12,6 +12,7 @@ from robonet.video_prediction import losses
 from robonet.video_prediction.ops import lrelu, dense, pad2d, conv2d, conv_pool2d, flatten, tile_concat, pool2d, get_norm_layer
 from tensorflow.python.util import nest
 from robonet.video_prediction.models.stochastic_generator import create_n_layer_encoder
+import pdb
 
 def loss_default_hparams(graph_class):
     return {
@@ -27,7 +28,7 @@ def loss_default_hparams(graph_class):
         'vgg_cdist_weight': 0.0,
         'state_weight': 0.0,
         'tv_weight': 0.001,
-        'action_weight': 1.0,
+        'action_weight': 0.0,
     }
 
 
@@ -115,8 +116,7 @@ def deterministic_embedding_generator(num_gpus, graph_type, tpu_mode, inputs, ta
     else:
         raise NotImplementedError
 
-    #convert back to batch-major
-    target_images = tf.transpose(targets['train']['images'][:, hparams.context_frames:], [1, 0, 2, 3, 4])
+    target_images = targets['train']['images'][hparams.context_frames:]
 
     # build the graph
     model_graph = graph_class()
@@ -143,7 +143,7 @@ def deterministic_embedding_generator(num_gpus, graph_type, tpu_mode, inputs, ta
         
         gen_images = outputs.get('gen_images_enc', outputs['gen_images'])
 
-        scalar_summaries, tensor_summaries = {}, {'pred_frames': pred_frames}
+        scalar_summaries, tensor_summaries = {}, {'pred_frames': pred_frames, 'pred_targets':target_images, 'inference_images':inputs['inference']['images']}
         
         if hparams.l1_weight:
             gen_l1_loss = losses.l1_loss(gen_images, target_images)
@@ -202,6 +202,7 @@ def deterministic_embedding_generator(num_gpus, graph_type, tpu_mode, inputs, ta
         loss = sum(loss * weight for loss, weight in gen_losses.values())
         g_gradvars = optimizer.compute_gradients(loss, var_list=model_graph.vars)
         g_train_op = optimizer.apply_gradients(g_gradvars, global_step=global_step)
+
         return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=g_train_op, predictions=pred_frames), scalar_summaries, tensor_summaries
     # if test build the predictor
     raise NotImplementedError

@@ -3,5 +3,7 @@
     "buffer_size":256,
     "load_T": 15,
     "sub_batch_size": 8,
-    "same_cam_across_sub_batch": true
+    "same_cam_across_sub_batch": true,
+    "target_adim": 5,
+    "splits": [0.9, 0.1, 0]
 }

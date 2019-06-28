@@ -14,7 +14,6 @@ class DetVPredCell(VPredCell):
         super().__init__(inputs, hparams, reuse)
 
     def call(self, inputs, states):
-        pdb.set_trace()
         norm_layer = ops.get_norm_layer(self.hparams.norm_layer)
         downsample_layer = ops.get_downsample_layer(self.hparams.downsample_layer)
         upsample_layer = ops.get_upsample_layer(self.hparams.upsample_layer)
