@@ -42,18 +42,19 @@ class RoboNetDataset(BaseVideoDataset):
 
         for metadata in self._metadata:
             train_files, val_files, test_files = self._split_files(metadata)
-            if self._hparams.splits[0]:
-                assert len(train_files) > 0, "train files requested but non-given"
+            if train_files:
                 self.rng.shuffle(train_files) 
-                self._train_sources.append(train_files)
-            if self._hparams.splits[1]:
-                assert len(val_files) > 0, "val files requested but non-given"
+                self._train_sources.append((train_files, metadata))
+            if val_files:
                 self.rng.shuffle(val_files) 
-                self._val_sources.append(val_files)
-            if self._hparams.splits[2]:
-                assert len(test_files) > 0, "test files requested but non-given"
+                self._val_sources.append((val_files, metadata))
+            if test_files:
                 self.rng.shuffle(test_files) 
-                self._test_sources.append(test_files)
+                self._test_sources.append((test_files, metadata))
+
+        for frac, source, name in zip(self._hparams.splits, [self._train_sources, self._val_sources, self._test_sources], self.modes):
+            if frac:
+                assert len(source) and sum([len(s[0]) for s in source]), "mode {} has split {} but no records".format(name, frac)
 
         output_format = [tf.uint8, tf.float32, tf.float32]        
         if self._hparams.load_annotations:
@@ -74,9 +75,9 @@ class RoboNetDataset(BaseVideoDataset):
         self._pool = multiprocessing.Pool(n_workers)
 
         if len(self._train_sources):
-            n_train_ex = sum(len(f) for f in self._train_sources)
-            train_generator = self._hdf5_generator(self._train_sources, self.train_rng, 'train')
-            next(train_generator)
+            train_s, train_s_m = [[t[j] for t in self._train_sources] for j in range(2)]
+            n_train_ex = sum(len(f) for f in train_s)
+            train_generator = self._hdf5_generator(train_s, train_s_m, self.train_rng, 'train')
             dataset = tf.data.Dataset.from_generator(lambda: train_generator, output_format)
             dataset = dataset.map(self._get_dict).prefetch(self._hparams.buffer_size)
             self._data_loaders['train'] = dataset.make_one_shot_iterator().get_next()
@@ -84,8 +85,8 @@ class RoboNetDataset(BaseVideoDataset):
             print('no train files')
 
         if len(self._val_sources):
-            val_generator = self._hdf5_generator(self._val_sources, self.val_rng, 'val')
-            next(val_generator)
+            val_s, val_s_m = [[v[j] for v in self._val_sources] for j in range(2)]
+            val_generator = self._hdf5_generator(val_s, val_s_m, self.val_rng, 'val')
             dataset = tf.data.Dataset.from_generator(lambda: val_generator, output_format)
             dataset = dataset.map(self._get_dict).prefetch(max(int(self._hparams.buffer_size / 10), 1))
             self._data_loaders['val'] = dataset.make_one_shot_iterator().get_next()
@@ -93,8 +94,8 @@ class RoboNetDataset(BaseVideoDataset):
             print('no val files')
         
         if len(self._test_sources):
-            test_generator = self._hdf5_generator(self._test_sources, self.test_rng, 'test')
-            next(test_generator)
+            test_s, test_s_m = [[t[j] for t in self._train_sources] for j in range(2)]
+            test_generator = self._hdf5_generator(test_s, test_s_m, self.test_rng, 'test')
             dataset = tf.data.Dataset.from_generator(lambda: test_generator, output_format)
             dataset = dataset.map(self._get_dict).prefetch(max(int(self._hparams.buffer_size / 10), 1))
             self._data_loaders['test'] = dataset.make_one_shot_iterator().get_next()
@@ -149,7 +150,7 @@ class RoboNetDataset(BaseVideoDataset):
         
         return HParams(**default_dict)
 
-    def _hdf5_generator(self, sources, rng, mode): 
+    def _hdf5_generator(self, sources, sources_metadata, rng, mode): 
         file_indices, source_epochs = [[0 for _ in range(len(sources))] for _ in range(2)]
 
         while True:
@@ -171,7 +172,7 @@ class RoboNetDataset(BaseVideoDataset):
                 for sb in range(self._hparams.sub_batch_size):
                     selected_file = sources[selected_source][file_indices[selected_source]]
                     file_indices[selected_source] += 1
-                    selected_file_metadata = self._metadata[selected_source].get_file_metadata(selected_file)
+                    selected_file_metadata = sources_metadata[selected_source].get_file_metadata(selected_file)
 
                     file_names.append(selected_file)
                     file_metadata.append(selected_file_metadata)
@@ -252,19 +253,20 @@ def _timing_test(N, loader):
     import random
 
     mode_tensors = {}
-    for m in ['train', 'test', 'val']:
+    for m in loader.modes:
         mode_tensors[m] = [loader[x, m] for x in ['images', 'states', 'actions']]
     s = tf.Session()
 
     timings = []
-    for i in range(N):
-        m = random.choice(['train', 'test', 'val'])
-        start = time.time()
-        s.run(mode_tensors[m])
-        run_time = time.time() - start
-        if m == 'train':
-            timings.append(run_time)
-        print('run {}, mode {} took {} seconds'.format(i, m, run_time))
+    for m in loader.modes:
+        for i in range(N):
+            
+            start = time.time()
+            s.run(mode_tensors[m])
+            run_time = time.time() - start
+            if m == 'train':
+                timings.append(run_time)
+            print('run {}, mode {} took {} seconds'.format(i, m, run_time))
 
     if timings:
         print('train runs took on average {} seconds'.format(sum(timings) / len(timings)))
