@@ -4,4 +4,7 @@ scipy
 scikit-image
 h5py
 imageio-ffmpeg
+pandas
+tqdm
+requests
 ray

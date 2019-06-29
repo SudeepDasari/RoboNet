@@ -40,6 +40,8 @@ def load_camera_imgs(cam_index, file_pointer, file_metadata, target_dims, start_
     old_dims = file_metadata['frame_dim']
     length = file_metadata['img_T']
     encoding = file_metadata['img_encoding']
+    image_format = file_metadata['image_format']
+
     if n_load is None:
         n_load = length
 
@@ -64,7 +66,12 @@ def load_camera_imgs(cam_index, file_pointer, file_metadata, target_dims, start_
             images[t] = img
         else:
             images[t] = cv2.resize(img, (target_width, target_height), interpolation=resize_method)
-    return images
+    
+    if image_format == 'RGB':
+        return images
+    elif image_format == 'BGR':
+        return images[:, :, :, ::-1]
+    raise NotImplementedError
 
 
 def load_states(file_pointer, meta_data, hparams):
@@ -140,7 +147,7 @@ def load_data(f_name, file_metadata, hparams, rng=None):
     assert os.path.exists(f_name) and os.path.isfile(f_name), "invalid f_name"
     with open(f_name, 'rb') as f:
         buf = f.read()
-    assert hashlib.sha256(buf).hexdigest() == file_metadata['sha256'], "file hash doesn't match meta-data"
+    assert hashlib.sha256(buf).hexdigest() == file_metadata['sha256'], "file hash doesn't match meta-data. maybe delete pkl and re-generate?"
     
     with h5py.File(io.BytesIO(buf)) as hf:
         start_time, n_states = 0, min([file_metadata['state_T'], file_metadata['img_T'], file_metadata['action_T'] + 1])

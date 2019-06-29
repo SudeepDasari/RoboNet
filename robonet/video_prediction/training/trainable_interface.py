@@ -12,10 +12,6 @@ import time
 import glob
 
 
-# from robonet.video_prediction.training.util import split_model_inference
-
-
-
 class VPredTrainable(Trainable):
     def _setup(self, config):
         # run hparams are passed in through config dict
@@ -121,14 +117,11 @@ class VPredTrainable(Trainable):
         if 'annotations' in data_loader:
             tensor_names = ['actions', 'images', 'states', 'annotations']
 
-        t = MultiplexedTensors(data_loader, tensor_names)
-        loaded_tensors = [t[k] for k in tensor_names]
-        self._tensor_multiplexers.append(t)
-        images = loaded_tensors[1][:, :, 0]          # grab cam 0
+        self._tensor_multiplexer = MultiplexedTensors(data_loader, tensor_names)
+        loaded_tensors = [self._tensor_multiplexer[k] for k in tensor_names]
         
         self._real_annotations = None
-        # self._real_images = loaded_tensors[1] = loaded_tensors[1][:, :, 0]              # grab cam 0 for images
-        loaded_tensors[1] = loaded_tensors[1][:, :, 0]
+        self._real_images = loaded_tensors[1] = loaded_tensors[1][:, :, 0]              # grab cam 0 for images
         if 'annotations' in data_loader:
             loaded_tensors[3] = loaded_tensors[3][:, :, 0]                              # grab cam 0 for annotations
             self._real_annotations = loaded_tensors[3]
@@ -136,20 +129,19 @@ class VPredTrainable(Trainable):
         inputs, targets = {'actions': loaded_tensors[0]}, {}
         for k, v in zip(tensor_names[1:], loaded_tensors[1:]):
             inputs[k], targets[k] = v[:, :-1], v
-        self._real_images.append(inputs['images'])
+
         return inputs, targets
 
     def _train(self):
         itr = self.iteration
         
         # no need to increment itr since global step is incremented by train_op
-        # real_images = tf.concat(self._real_images, axis=0)
         loss, train_op = self._estimator.loss, self._estimator.train_op
         
         fetches = {'global_step': itr}
 
         start = time.time()
-        train_loss = self.sess.run([loss, train_op], feed_dict=self._train_feed_dict)[0]
+        train_loss = self.sess.run([loss, train_op], feed_dict=self._tensor_multiplexer.train)[0]
         fetches['metric/step_time'] = time.time() - start
         
         if itr % self._hparams.image_summary_freq == 0:
@@ -161,7 +153,7 @@ class VPredTrainable(Trainable):
                 img_summary_get_ops.update({'real_annotation':self._real_annotations,
                                             'pred_distrib':self._tensor_metrics['pred_distrib']})
 
-            for name, fetch_mode in zip(['train', 'val'], [self._train_feed_dict, self._val_feed_dict]):
+            for name, fetch_mode in zip(['train', 'val'], [self._tensor_multiplexer.train, self._tensor_multiplexer.val]):
                 fetched_npy = self.sess.run(img_summary_get_ops, feed_dict=fetch_mode)
                 real_img, pred_img = fetched_npy['real_images'], fetched_npy['pred_frames']
 
@@ -177,13 +169,13 @@ class VPredTrainable(Trainable):
                         if o > 0:
                             dist_name = 'object{}'.format(o)
 
-                        real_dist, pred_dist = [render_dist(x[:, :, :, :, o]) for x in (fetched_npy['real_annotation'], fetched_npy['pred_distrib'])]
+                        real_dist, pred_dist = [render_dist(x[:, :, :, :, o]) for x in img_summary_tensors[2:]]                
                         fetches['metric/{}_pixel_warp/{}'.format(dist_name, name)] = pad_and_concat(real_dist, pred_dist, self._hparams.pad_amount)
 
         if itr % self._hparams.scalar_summary_freq == 0:
             fetches['metric/loss/train'] = train_loss
-            fetches['metric/loss/val'] = self.sess.run(loss, feed_dict=self._val_feed_dict)
-            for name, mode in zip(['train', 'val'], [self._train_feed_dict, self._val_feed_dict]):
+            fetches['metric/loss/val'] = self.sess.run(loss, feed_dict=self._tensor_multiplexer.val)
+            for name, mode in zip(['train', 'val'], [self._tensor_multiplexer.train, self._tensor_multiplexer.val]):
                 metrics = self.sess.run(self._scalar_metrics, feed_dict=mode)
                 for key, value in metrics.items():
                     fetches['metric/{}/{}'.format(key, name)] = value

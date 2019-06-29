@@ -27,7 +27,7 @@ def loss_default_hparams(graph_class):
         'state_weight': 0.0,
         'tv_weight': 0.001,
         'zat_kl_weight': 0.0,
-        'action_weight': None,
+        'action_weight': 0.0,
         'zr_kl_weight': 0.0,
     }
 

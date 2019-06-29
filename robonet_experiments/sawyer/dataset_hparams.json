@@ -1,5 +1,5 @@
 {
-    "dataset": "RoboNet",
+    "dataset": "AnnotatedRoboNet",
     "buffer_size":256,
     "load_T": 15
 }

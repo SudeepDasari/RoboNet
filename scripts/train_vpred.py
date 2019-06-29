@@ -39,7 +39,7 @@ if __name__ == '__main__':
     parser.add_argument('--cluster', action='store_true', help='runs ray in cluster mode (by supplying redis_address) if flag is supplied')
     parser.add_argument('--no_resume', action='store_true', help='prevents ray from resuming (or restarting trials which crashed)')
 
-    # parser.add_argument('--batch_size', type=int, nargs='+', default=[4], help='batch size for model training (if list will grid search)')   # the batch size should be specified in the class
+    parser.add_argument('--batch_size', type=int, nargs='+', default=[], help='batch size for model training (if list will grid search)')
     parser.add_argument('--max_steps', type=int, nargs='+', default=[300000], help="maximum number of iterations to train for (if list will grid search)")
     parser.add_argument('--train_frac', type=float, nargs='+', default=[0.9], help='fraction of data to use as training set (if list will grid search)')
     parser.add_argument('--val_frac', type=float, nargs='+', default=[0.05], help='fraction of data to use as validation set (if list will grid search)')
@@ -52,12 +52,16 @@ if __name__ == '__main__':
 
     dataset_hparams = json_try_load(args.experiment_dir + '/dataset_hparams.json')
     model_hparams = json_try_load(args.experiment_dir + '/model_hparams.json')
+    if 'batch_size' in dataset_hparams and args.batch_size:
+        raise ValueError
+    elif 'batch_size' in dataset_hparams:
+        args.batch_size = dataset_hparams.pop('batch_size')
     
     config = {'dataset_hparams': dataset_hparams,
               'model_hparams': model_hparams,
               'restore_dir': args.restore_dir,
               'train_fraction': tune.grid_search(args.train_frac),
-              # 'batch_size': tune.grid_search(args.batch_size),
+              'batch_size': tune.grid_search(args.batch_size),
               'val_fraction': tune.grid_search(args.val_frac),
               'max_steps': tune.grid_search(args.max_steps),
               'data_directory': args.input_dir,
