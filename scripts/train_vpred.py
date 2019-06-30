@@ -38,6 +38,7 @@ if __name__ == '__main__':
     parser.add_argument('--cluster', action='store_true', help='runs ray in cluster mode (by supplying redis_address) if flag is supplied')
     parser.add_argument('--no_resume', action='store_true', help='prevents ray from resuming (or restarting trials which crashed)')
 
+    parser.add_argument('--held_out', type=str, nargs='+', default=[], help='robot held out during training (if list will grid search)')
     parser.add_argument('--batch_size', type=int, nargs='+', default=[16], help='batch size for model training (if list will grid search)')
     parser.add_argument('--max_steps', type=int, nargs='+', default=[300000], help="maximum number of iterations to train for (if list will grid search)")
     parser.add_argument('--train_frac', type=float, nargs='+', default=[0.9], help='fraction of data to use as training set (if list will grid search)')
@@ -66,6 +67,8 @@ if __name__ == '__main__':
               'action_primitive': args.action_primitive,
               'balance_across_robots': args.balance_robots,
               'filter_adim': args.filter_adim}
+    if args.held_out:
+        config['held_out_robot'] = tune.grid_search(args.held_out)
     
     if not args.name:
         args.name = "{}_video_prediction_training".format(os.getlogin())
