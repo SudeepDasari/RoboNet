@@ -1,7 +1,6 @@
-from robonet.datasets.robonet_dataset import RoboNetDataset
+from robonet.datasets.variants.val_filter_dataset import ValFilterDataset
 
-
-class AnnotationBenchmarkDataset(RoboNetDataset):
+class AnnotationBenchmarkDataset(ValFilterDataset):
     """
     Separates files that have annotations and those which don't
         - files with annotations are loaded as validation files
@@ -10,37 +9,18 @@ class AnnotationBenchmarkDataset(RoboNetDataset):
 
     @staticmethod
     def _get_default_hparams():
-        parent_hparams = RoboNetDataset._get_default_hparams()
-        parent_hparams.add_hparam('held_out_robot', '')
+        parent_hparams = ValFilterDataset._get_default_hparams()
         parent_hparams.load_annotations = True
         parent_hparams.zero_if_missing_annotation = True
         return parent_hparams
-    
-    def _split_files(self, metadata):
+
+    def train_val_filter(self, train_metadata, val_metadata):
         assert self._hparams.splits[1], "mode only works with validation records"
         assert self._hparams.load_annotations, "mode requires annotation loading"
         assert self._hparams.zero_if_missing_annotation, "mode requires some files to not be annotated"
-        train_files, test_files, val_files = [], [], []
-
-        if self._hparams.held_out_robot:
-            train_test_files = metadata[metadata['robot'] != self._hparams.held_out_robot].files
-            val_files = metadata[metadata['robot'] == self._hparams.held_out_robot].files
-            [self.rng.shuffle(files) for files in [train_test_files, val_files]]
-            train_pivot = int(len(train_test_files) * self._hparams.splits[0])
-        else:
-            train_test_files = metadata[metadata['contains_annotation'] != True].files
-            val_files = metadata[metadata['contains_annotation'] == True].files
-            [self.rng.shuffle(files) for files in [train_test_files, val_files]]
-            train_pivot = int(len(train_test_files) * self._hparams.splits[0])
-
-        if self._hparams.splits[0]:
-            train_files = train_test_files[:train_pivot]
-        if self._hparams.splits[1]:
-            val_files = val_files
-        if self._hparams.splits[2]:
-            test_files = train_test_files[train_pivot:]
-        
-        return train_files, val_files, test_files
+        train_metadata = train_metadata[train_metadata['contains_annotation'] != True]
+        val_metadata = val_metadata[val_metadata['contains_annotation'] == True]
+        return train_metadata, val_metadata
 
 
 if __name__ == '__main__':

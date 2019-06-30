@@ -83,7 +83,9 @@ if __name__ == '__main__':
                 config=config,
                 resources_per_trial= {"cpu": 1, "gpu": 1},
                 checkpoint_freq=args.save_freq,
-                upload_dir=args.upload_dir)
+                upload_dir=args.upload_dir,
+                local_dir=os.environ['RAY_RESULTS']
+    )
     
     redis_address = None
     if args.cluster:

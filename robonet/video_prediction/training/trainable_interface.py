@@ -20,14 +20,8 @@ class VPredTrainable(Trainable):
 
         metadata = self._filter_metadata(load_metadata(config['data_directory']))
 
-        self._tensor_multiplexers = []
         self._real_images = []
         inputs, targets = self._get_input_targets(DatasetClass, metadata, self.dataset_hparams)
-
-        self._train_feed_dict, self._val_feed_dict = {}, {}
-        for t in self._tensor_multiplexers:
-            self._train_feed_dict.update(t.train)
-            self._val_feed_dict.update(t.val)
 
         self._real_images = tf.concat(self._real_images, axis=0)
 
@@ -163,13 +157,14 @@ class VPredTrainable(Trainable):
                     fetches['metric/image_summary/{}_inference'.format(name)] = pad(stbmajor(fetched_npy['inference_images']), self._hparams.pad_amount)
 
                 fetches['metric/image_summary/{}'.format(name)] = pad_and_concat(stbmajor(fetched_npy['pred_targets']), fetched_npy['pred_frames'], self._hparams.pad_amount)
+
                 if self._real_annotations is not None and name != 'train':
-                    for o in range(fetched_npy[-2].shape[-1]):
+                    dists = (fetched_npy['real_annotation'], fetched_npy['pred_distrib'])
+                    for o in range(len(dists)):
                         dist_name = 'robot'
                         if o > 0:
                             dist_name = 'object{}'.format(o)
-
-                        real_dist, pred_dist = [render_dist(x[:, :, :, :, o]) for x in img_summary_tensors[2:]]                
+                        real_dist, pred_dist = [render_dist(x[:, :, :, :, o]) for x in dists]
                         fetches['metric/{}_pixel_warp/{}'.format(dist_name, name)] = pad_and_concat(real_dist, pred_dist, self._hparams.pad_amount)
 
         if itr % self._hparams.scalar_summary_freq == 0:
