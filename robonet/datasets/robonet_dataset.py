@@ -167,7 +167,7 @@ class RoboNetDataset(BaseVideoDataset):
                 # if # sources <= # sub_batches then sample each source at least once per batch
                 if len(sources) <= self._batch_size // self._hparams.sub_batch_size and b // self._hparams.sub_batch_size < len(sources):
                     selected_source = b // self._hparams.sub_batch_size
-                elif len(sources) >  self._batch_size // self._hparams.sub_batch_size:
+                elif len(sources) > self._batch_size // self._hparams.sub_batch_size:
                     selected_source = rng.randint(0, len(sources) - 1)
                     while selected_source in sources_selected_thus_far:
                         selected_source = rng.randint(0, len(sources) - 1)
