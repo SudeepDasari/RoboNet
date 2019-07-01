@@ -10,12 +10,14 @@ import tensorflow as tf
 import ray
 import ray.tune as tune
 
+import pdb
 
 def json_try_load(fname):
     try:
         return json.load(open(fname, 'r'))
     except FileNotFoundError:
-        return {}
+        ValueError('warning, no file {} found!'.format(fname))
+        # return {}
 
 
 def trial_str_creator(trial):
@@ -39,7 +41,7 @@ if __name__ == '__main__':
     parser.add_argument('--no_resume', action='store_true', help='prevents ray from resuming (or restarting trials which crashed)')
     parser.add_argument('--temp_dir', default=None, type=str, help="ray will log to this temp dir (instead /tmp/ray)")
 
-    parser.add_argument('--batch_size', type=int, nargs='+', default=[16], help='batch size for model training (if list will grid search)')
+    parser.add_argument('--batch_size', type=int, nargs='+', default=[], help='batch size for model training (if list will grid search)')
     parser.add_argument('--max_steps', type=int, nargs='+', default=[300000], help="maximum number of iterations to train for (if list will grid search)")
     parser.add_argument('--train_frac', type=float, nargs='+', default=[0.9], help='fraction of data to use as training set (if list will grid search)')
     parser.add_argument('--val_frac', type=float, nargs='+', default=[0.05], help='fraction of data to use as validation set (if list will grid search)')
@@ -52,6 +54,11 @@ if __name__ == '__main__':
 
     dataset_hparams = json_try_load(args.experiment_dir + '/dataset_hparams.json')
     model_hparams = json_try_load(args.experiment_dir + '/model_hparams.json')
+
+    if 'batch_size' in dataset_hparams and args.batch_size:
+        raise ValueError
+    elif 'batch_size' in dataset_hparams:
+        args.batch_size = dataset_hparams.pop('batch_size')
     
     config = {'dataset_hparams': dataset_hparams,
               'model_hparams': model_hparams,
@@ -71,6 +78,9 @@ if __name__ == '__main__':
     if isinstance(dataset_hparams.get('held_out_robot', ''), (list, tuple)):
         dataset_hparams['held_out_robot'] = tune.grid_search(dataset_hparams['held_out_robot'])
     
+    if 'robot_set' in dataset_hparams:
+        config['robot_set'] = dataset_hparams.pop('robot_set')
+
     if not args.name:
         args.name = "{}_video_prediction_training".format(os.getlogin())
 
@@ -81,7 +91,9 @@ if __name__ == '__main__':
                 loggers=[GIFLogger],
                 config=config,
                 resources_per_trial= {"cpu": 1, "gpu": 1},
-                checkpoint_freq=args.save_freq)
+                checkpoint_freq=args.save_freq,
+                upload_dir=args.upload_dir
+    )
     
     redis_address = None
     if args.cluster:
@@ -93,5 +105,6 @@ if __name__ == '__main__':
         max_failures = 20
     
     trials = tune.run(exp, queue_trials=True, resume=not args.no_resume, 
-                    checkpoint_at_end=True, max_failures=max_failures)
+                    checkpoint_at_end=True, max_failures=max_failures,
+                    local_dir=os.environ.get('RAY_RESULTS', None))
     exit(0)

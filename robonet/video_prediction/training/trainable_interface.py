@@ -1,4 +1,5 @@
 from ray.tune import Trainable
+import pdb
 import tensorflow as tf
 from robonet.datasets import get_dataset_class, MultiplexedTensors, load_metadata
 from robonet.video_prediction.models import get_model_fn
@@ -6,7 +7,7 @@ from robonet.video_prediction.utils import tf_utils
 import numpy as np
 import os
 from tensorflow.contrib.training import HParams
-from .util import pad_and_concat, render_dist
+from .util import pad_and_concat, render_dist, pad, stbmajor
 import time
 import glob
 
@@ -14,15 +15,19 @@ import glob
 class VPredTrainable(Trainable):
     def _setup(self, config):
         # run hparams are passed in through config dict
-        dataset_hparams, model_hparams, self._hparams = self._extract_hparams(config)
-        DatasetClass, model_fn = get_dataset_class(dataset_hparams.pop('dataset')), get_model_fn(model_hparams.pop('model'))
+        self.dataset_hparams, self.model_hparams, self._hparams = self._extract_hparams(config)
+        DatasetClass, model_fn = get_dataset_class(self.dataset_hparams.pop('dataset')), get_model_fn(self.model_hparams.pop('model'))
 
         metadata = self._filter_metadata(load_metadata(config['data_directory']))
-        inputs, targets = self._get_input_targets(DatasetClass, metadata, dataset_hparams)
+
+        self._real_images = []
+        inputs, targets = self._get_input_targets(DatasetClass, metadata, self.dataset_hparams)
+
+        self._real_images = tf.concat(self._real_images, axis=0)
 
         self._estimator, self._scalar_metrics, self._tensor_metrics = model_fn(self._hparams.n_gpus, self._hparams.graph_type, 
-                                                    False, inputs, targets, tf.estimator.ModeKeys.TRAIN, model_hparams)
-        parameter_count = tf.reduce_sum([tf.reduce_prod(tf.shape(v)) for v in tf.trainable_variables()])
+                                                    False, inputs, targets, tf.estimator.ModeKeys.TRAIN, self.model_hparams)
+        self._parameter_count = parameter_count = tf.reduce_sum([tf.reduce_prod(tf.shape(v)) for v in tf.trainable_variables()])
 
         self._global_step = tf.train.get_or_create_global_step()
         self.saver = tf.train.Saver(max_to_keep=self._hparams.max_to_keep)
@@ -41,7 +46,10 @@ class VPredTrainable(Trainable):
         Grabs and (optionally) modifies hparams
         """
         dataset_hparams, model_hparams = config.pop('dataset_hparams', {}), config.pop('model_hparams', {})
+        if 'sub_batch_size' in dataset_hparams:
+            model_hparams['sub_batch_size'] = dataset_hparams['sub_batch_size']
         hparams = self._default_hparams().override_from_dict(config)
+        model_hparams['batch_size'] = hparams.batch_size
         hparams.graph_type = model_hparams.pop('graph_type')                      # required key which tells model which graph to load
         assert hparams.max_steps > 0, "max steps must be positive!"
 
@@ -83,7 +91,7 @@ class VPredTrainable(Trainable):
             metadata = metadata[metadata['primitives'] == self._hparams.action_primitive]
         if self._hparams.filter_adim:
             metadata = metadata[metadata['adim'] == self._hparams.filter_adim]
-        
+
         if self._hparams.balance_across_robots:
             assert not self._hparams.robot, "can't balance across a single robot"
             unique_robots = metadata['robot'].frame.unique().tolist()
@@ -92,17 +100,17 @@ class VPredTrainable(Trainable):
             
         if self._hparams.robot:
             metadata = metadata[metadata['robot'] == self._hparams.robot]
-        
+
         return metadata
 
     def _get_input_targets(self, DatasetClass, metadata, dataset_hparams):
         data_loader = DatasetClass(self._hparams.batch_size, metadata, dataset_hparams)
         assert data_loader.hparams.get('load_random_cam', False), "function assumes loader will grab one random camera feed in multi-cam object"
-        
+
         tensor_names = ['actions', 'images', 'states']
         if 'annotations' in data_loader:
             tensor_names = ['actions', 'images', 'states', 'annotations']
-            
+
         self._tensor_multiplexer = MultiplexedTensors(data_loader, tensor_names)
         loaded_tensors = [self._tensor_multiplexer[k] for k in tensor_names]
         
@@ -131,21 +139,35 @@ class VPredTrainable(Trainable):
         fetches['metric/step_time'] = time.time() - start
         
         if itr % self._hparams.image_summary_freq == 0:
-            img_summary_get_ops = [self._real_images, self._tensor_metrics['pred_frames']]
+            img_summary_get_ops = {'real_images':self._real_images,
+                                   'pred_frames':self._tensor_metrics['pred_frames'],
+                                   }
+            if 'pred_targets' in self._tensor_metrics:  # used for embedding model
+                img_summary_get_ops['pred_targets'] = self._tensor_metrics['pred_targets']
+                img_summary_get_ops['inference_images'] = self._tensor_metrics['inference_images']
             if self._real_annotations is not None:
-                img_summary_get_ops = img_summary_get_ops + [self._real_annotations, self._tensor_metrics['pred_distrib']]
-            
+                img_summary_get_ops.update({'real_annotation':self._real_annotations,
+                                            'pred_distrib':self._tensor_metrics['pred_distrib']})
+
             for name, fetch_mode in zip(['train', 'val'], [self._tensor_multiplexer.train, self._tensor_multiplexer.val]):
-                img_summary_tensors = self.sess.run(img_summary_get_ops, feed_dict=fetch_mode)
-                real_img, pred_img = img_summary_tensors[:2]
-                fetches['metric/image_summary/{}'.format(name)] = pad_and_concat(real_img, pred_img, self._hparams.pad_amount)
+                fetched_npy = self.sess.run(img_summary_get_ops, feed_dict=fetch_mode)
+                real_img, pred_img = fetched_npy['real_images'], fetched_npy['pred_frames']
+
+                if real_img.shape[0] == pred_img.shape[0]*2:  # if using different trajectories for inference and prediction
+                    fetches['metric/image_summary/{}_all'.format(name)] = pad(fetched_npy['real_images'], self._hparams.pad_amount)
+                    # real_img_inf, real_img = split_model_inference(real_img, params=self.model_hparams)
+                    fetches['metric/image_summary/{}_inference'.format(name)] = pad(stbmajor(fetched_npy['inference_images']), self._hparams.pad_amount)
+                    fetches['metric/image_summary/{}'.format(name)] = pad_and_concat(stbmajor(fetched_npy['pred_targets']), fetched_npy['pred_frames'], self._hparams.pad_amount)
+                else:  # used for everything else:
+                    fetches['metric/image_summary/{}'.format(name)] = pad_and_concat(fetched_npy['real_images'], fetched_npy['pred_frames'], self._hparams.pad_amount)
+
                 if self._real_annotations is not None and name != 'train':
-                    for o in range(img_summary_tensors[-2].shape[-1]):
+                    dists = (fetched_npy['real_annotation'], fetched_npy['pred_distrib'])
+                    for o in range(len(dists)):
                         dist_name = 'robot'
                         if o > 0:
                             dist_name = 'object{}'.format(o)
-
-                        real_dist, pred_dist = [render_dist(x[:, :, :, :, o]) for x in img_summary_tensors[2:]]                
+                        real_dist, pred_dist = [render_dist(x[:, :, :, :, o]) for x in dists]
                         fetches['metric/{}_pixel_warp/{}'.format(dist_name, name)] = pad_and_concat(real_dist, pred_dist, self._hparams.pad_amount)
 
         if itr % self._hparams.scalar_summary_freq == 0:

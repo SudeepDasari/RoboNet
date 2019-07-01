@@ -4,6 +4,7 @@ from robonet.video_prediction.ops import dense, conv2d, flatten, tile_concat
 from robonet.video_prediction.rnn_ops import BasicConv2DLSTMCell, Conv2DGRUCell
 from robonet.video_prediction.utils import tf_utils
 
+import numpy as np
 
 RELU_SHIFT = 1e-7
 
@@ -219,6 +220,16 @@ class VPredCell(tf.nn.rnn_cell.RNNCell):
             output_size['transformed_pix_distribs'] = tf.TensorShape([height, width, num_motions, num_masks])
         if 'states' in inputs:
             output_size['gen_states'] = inputs['states'].shape[2:]
+        if 'zrs' in inputs:
+            output_size['zat_mu'] = self.hparams.za_dim
+            output_size['zat_log_sigma_sq'] = self.hparams.za_dim
+            output_size['gen_actions'] = inputs['actions'].shape[-1].value
+        if 'zr_mu' in inputs and 'zr_log_sigma_sq' in inputs:
+            output_size['zr_mu'] = self.hparams.zr_dim
+            output_size['zr_log_sigma_sq'] = self.hparams.zr_dim
+        if 'e' in inputs:
+            output_size['e'] = self.hparams.e_dim
+
         if self.hparams.transformation == 'flow':
             output_size['gen_flows'] = tf.TensorShape([height, width, 2, self.hparams.last_frames * self.hparams.num_transformed_images])
             output_size['gen_flows_rgb'] = tf.TensorShape([height, width, 3, self.hparams.last_frames * self.hparams.num_transformed_images])
