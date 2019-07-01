@@ -29,6 +29,7 @@ def loss_default_hparams(graph_class):
         'zat_kl_weight': 0.0,
         'action_weight': 0.0,
         'zr_kl_weight': 0.0,
+        'batch_size':None
     }
 
 

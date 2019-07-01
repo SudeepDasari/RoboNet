@@ -20,8 +20,8 @@ class DeterministicWrapper(BaseGraph):
             inputs = {name: tf_utils.maybe_pad_or_slice(input, hparams.sequence_length - 1)
                 for name, input in inputs.items()}
 
-
-            inputs['e'] = outputs_enc
+            if outputs_enc is not None:
+                inputs['e'] = outputs_enc
 
             cell = DetVPredCell(inputs, hparams)
             outputs, _ = tf.nn.dynamic_rnn(cell, inputs, dtype=tf.float32,

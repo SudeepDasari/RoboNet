@@ -114,7 +114,7 @@ def deterministic_embedding_generator(num_gpus, graph_type, tpu_mode, inputs, ta
         hparams.e_dim = outputs_enc.get_shape().as_list()[2]
         outputs_enc = average_and_repeat(outputs_enc, hparams, tlen)
     else:
-        raise NotImplementedError
+        outputs_enc = None
 
     target_images = targets['train']['images'][hparams.context_frames:]
 

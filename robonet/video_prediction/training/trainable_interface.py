@@ -91,7 +91,7 @@ class VPredTrainable(Trainable):
             metadata = metadata[metadata['primitives'] == self._hparams.action_primitive]
         if self._hparams.filter_adim:
             metadata = metadata[metadata['adim'] == self._hparams.filter_adim]
-        
+
         if self._hparams.balance_across_robots:
             assert not self._hparams.robot, "can't balance across a single robot"
             unique_robots = metadata['robot'].frame.unique().tolist()
@@ -100,7 +100,7 @@ class VPredTrainable(Trainable):
             
         if self._hparams.robot:
             metadata = metadata[metadata['robot'] == self._hparams.robot]
-        
+
         return metadata
 
     def _get_input_targets(self, DatasetClass, metadata, dataset_hparams):
@@ -141,8 +141,10 @@ class VPredTrainable(Trainable):
         if itr % self._hparams.image_summary_freq == 0:
             img_summary_get_ops = {'real_images':self._real_images,
                                    'pred_frames':self._tensor_metrics['pred_frames'],
-                                   'pred_targets': self._tensor_metrics['pred_targets'],
-                                   'inference_images': self._tensor_metrics['inference_images']}
+                                   }
+            if 'pred_targets' in self._tensor_metrics:  # used for embedding model
+                img_summary_get_ops['pred_targets'] = self._tensor_metrics['pred_targets']
+                img_summary_get_ops['inference_images'] = self._tensor_metrics['inference_images']
             if self._real_annotations is not None:
                 img_summary_get_ops.update({'real_annotation':self._real_annotations,
                                             'pred_distrib':self._tensor_metrics['pred_distrib']})
@@ -155,8 +157,9 @@ class VPredTrainable(Trainable):
                     fetches['metric/image_summary/{}_all'.format(name)] = pad(fetched_npy['real_images'], self._hparams.pad_amount)
                     # real_img_inf, real_img = split_model_inference(real_img, params=self.model_hparams)
                     fetches['metric/image_summary/{}_inference'.format(name)] = pad(stbmajor(fetched_npy['inference_images']), self._hparams.pad_amount)
-
-                fetches['metric/image_summary/{}'.format(name)] = pad_and_concat(stbmajor(fetched_npy['pred_targets']), fetched_npy['pred_frames'], self._hparams.pad_amount)
+                    fetches['metric/image_summary/{}'.format(name)] = pad_and_concat(stbmajor(fetched_npy['pred_targets']), fetched_npy['pred_frames'], self._hparams.pad_amount)
+                else:  # used for everything else:
+                    fetches['metric/image_summary/{}'.format(name)] = pad_and_concat(fetched_npy['real_images'], fetched_npy['pred_frames'], self._hparams.pad_amount)
 
                 if self._real_annotations is not None and name != 'train':
                     dists = (fetched_npy['real_annotation'], fetched_npy['pred_distrib'])

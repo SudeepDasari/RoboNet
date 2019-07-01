@@ -16,7 +16,8 @@ def json_try_load(fname):
     try:
         return json.load(open(fname, 'r'))
     except FileNotFoundError:
-        return {}
+        ValueError('warning, no file {} found!'.format(fname))
+        # return {}
 
 
 def trial_str_creator(trial):
@@ -52,6 +53,7 @@ if __name__ == '__main__':
 
     dataset_hparams = json_try_load(args.experiment_dir + '/dataset_hparams.json')
     model_hparams = json_try_load(args.experiment_dir + '/model_hparams.json')
+
     if 'batch_size' in dataset_hparams and args.batch_size:
         raise ValueError
     elif 'batch_size' in dataset_hparams:
@@ -71,6 +73,9 @@ if __name__ == '__main__':
               'action_primitive': args.action_primitive,
               'balance_across_robots': args.balance_robots,
               'filter_adim': args.filter_adim}
+
+    if 'robot_set' in dataset_hparams:
+        config['robot_set'] = dataset_hparams.pop('robot_set')
 
     if not args.name:
         args.name = "{}_video_prediction_training".format(os.getlogin())

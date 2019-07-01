@@ -27,16 +27,18 @@ class RobotSetFilter(VPredTrainable):
 
     def _default_hparams(self):
         params = super()._default_hparams()
-        params.add_hparam('robot_set', ['sawyer', 'franka', 'widowx'])
-        params.set_hparam('balance_across_robots', True)
+        params.add_hparam('robot_set', ['sawyer', 'widowx', 'R3', 'franka'])
         return params
 
-    def _filter_metadata(self, metadata):
-        metadata = super()._filter_metadata(metadata)
+    def _filter_metadata(self, metadata_list):
+        metadata_list = super()._filter_metadata(metadata_list)
 
-        pdb.set_trace()
+        assert self._hparams.balance_across_robots, "need to balance accross robots!"
         if self._hparams.robot_set is not None:
-            assert isinstance(metadata, list)
-            metadata = [m[m['robot'][0] in self._hparams.robot_set] for m in metadata]
 
-        return metadata
+            new_metadata_list = []
+            for m in metadata_list:
+                if m['robot'].frame.unique().tolist()[0] in self._hparams.robot_set:
+                    print('using robot', m['robot'].frame.unique().tolist())
+                    new_metadata_list.append(m)
+        return new_metadata_list

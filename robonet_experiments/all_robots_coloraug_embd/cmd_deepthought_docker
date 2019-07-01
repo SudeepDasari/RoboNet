@@ -1,0 +1,1 @@
+python scripts/train_vpred.py --input_dir /parent/raid/sudeep/robonet_dataset/hdf5_new_fields --train_class RobotSetFilter   --experiment_dir robonet_experiments/all_robots_coloraug_embd/ --no_resume --local_mode --name all_robots_coloraug_embed --balance_robots --balance_robots

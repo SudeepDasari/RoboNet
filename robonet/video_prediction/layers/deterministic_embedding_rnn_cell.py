@@ -243,7 +243,8 @@ class DetVPredCell(VPredCell):
         if 'states' in inputs:
             outputs['gen_states'] = gen_state
 
-        outputs['e'] = inputs['e']
+        if 'e' in inputs:
+            outputs['e'] = inputs['e']
         if self.hparams.transformation == 'flow':
             outputs['gen_flows'] = flows
             flows_transposed = tf.transpose(flows, [0, 1, 2, 4, 3])

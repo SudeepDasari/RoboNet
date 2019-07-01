@@ -1,6 +1,7 @@
 from robonet.datasets.base_dataset import BaseVideoDataset
 from robonet.datasets.util.hdf5_loader import load_data, default_loader_hparams
 from tensorflow.contrib.training import HParams
+from robonet.datasets.util.dataset_utils import color_augment
 import numpy as np
 import tensorflow as tf
 import copy
@@ -144,7 +145,8 @@ class RoboNetDataset(BaseVideoDataset):
             'all_modes_max_workers': True,           # use multi-threaded workers regardless of the mode
             'load_random_cam': True,                 # load a random camera for each example
             'same_cam_across_sub_batch': False,      # same camera across sub_batches
-            'pool_workers': 0                        # number of workers for pool (if 0 uses batch_size workers)
+            'pool_workers': 0,                        # number of workers for pool (if 0 uses batch_size workers)
+            'color_augmentation':False
         }
         for k, v in default_loader_hparams().items():
             default_dict[k] = v
@@ -237,7 +239,12 @@ class RoboNetDataset(BaseVideoDataset):
             ncam = len(self._hparams.cams_to_load)
         
         shaped_images = tf.reshape(images, [self.batch_size, self._hparams.load_T, ncam, height, width, 3])
+
+
         out_dict['images'] = tf.cast(shaped_images, tf.float32) / 255.0
+        if self._hparams.color_augmentation:
+            out_dict['images'] = color_augment(out_dict['images'])
+
         out_dict['actions'] = tf.reshape(actions, [self.batch_size, self._hparams.load_T - 1, self._hparams.target_adim])
         out_dict['states'] = tf.reshape(states, [self.batch_size, self._hparams.load_T, self._hparams.target_sdim])
 
@@ -247,6 +254,9 @@ class RoboNetDataset(BaseVideoDataset):
             out_dict['f_names'] = f_names
         
         return out_dict
+
+
+
 
 
 def _timing_test(N, loader):
