@@ -70,8 +70,7 @@ class VPredTrainable(Trainable):
             'action_primitive': '',
             'filter_adim': 0,
             'max_steps': 300000,
-            'balance_across_robots': False,
-            'held_out_robot': ''
+            'balance_across_robots': False
         }
         return HParams(**default_dict)
 
@@ -84,10 +83,6 @@ class VPredTrainable(Trainable):
             metadata = metadata[metadata['primitives'] == self._hparams.action_primitive]
         if self._hparams.filter_adim:
             metadata = metadata[metadata['adim'] == self._hparams.filter_adim]
-        
-        if self._hparams.held_out_robot:
-            assert sum(metadata['robot'] == self._hparams.held_out_robot), "bot {} doesn't exist!".format(self._hparams.held_out_robot)
-            metadata = metadata[metadata['robot'] != self._hparams.held_out_robot]
         
         if self._hparams.balance_across_robots:
             assert not self._hparams.robot, "can't balance across a single robot"

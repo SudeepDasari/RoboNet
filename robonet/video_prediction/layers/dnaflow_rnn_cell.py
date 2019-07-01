@@ -333,6 +333,7 @@ class VPredCell(tf.nn.rnn_cell.RNNCell):
 
         image = tf.where(self.ground_truth[t], inputs['images'], states['gen_image'])  # schedule sampling (if any)
         last_images = states['last_images'][1:] + [image]
+
         if 'pix_distribs' in inputs:
             pix_distrib = tf.where(self.ground_truth[t], inputs['pix_distribs'], states['gen_pix_distrib'])
             last_pix_distribs = states['last_pix_distribs'][1:] + [pix_distrib]
@@ -365,6 +366,7 @@ class VPredCell(tf.nn.rnn_cell.RNNCell):
 
         layers = []
         new_conv_rnn_states = []
+
         for i, (out_channels, use_conv_rnn) in enumerate(self.encoder_layer_specs):
             with tf.variable_scope('h%d' % i):
                 if i == 0:
