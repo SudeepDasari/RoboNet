@@ -37,6 +37,7 @@ if __name__ == '__main__':
     parser.add_argument('--local_mode', action='store_true', help='runs ray in local mode if flag is supplied')
     parser.add_argument('--cluster', action='store_true', help='runs ray in cluster mode (by supplying redis_address) if flag is supplied')
     parser.add_argument('--no_resume', action='store_true', help='prevents ray from resuming (or restarting trials which crashed)')
+    parser.add_argument('--temp_dir', default=None, type=str, help="ray will log to this temp dir (instead /tmp/ray)")
 
     parser.add_argument('--batch_size', type=int, nargs='+', default=[16], help='batch size for model training (if list will grid search)')
     parser.add_argument('--max_steps', type=int, nargs='+', default=[300000], help="maximum number of iterations to train for (if list will grid search)")
@@ -85,7 +86,7 @@ if __name__ == '__main__':
     redis_address = None
     if args.cluster:
         redis_address = ray.services.get_node_ip_address() + ':6379'
-    ray.init(redis_address=redis_address, local_mode=args.local_mode)
+    ray.init(redis_address=redis_address, local_mode=args.local_mode, temp_dir=args.temp_dir)
     
     max_failures = 3
     if args.cluster:
