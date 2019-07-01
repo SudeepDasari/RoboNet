@@ -142,62 +142,18 @@ class VPredCell(tf.nn.rnn_cell.RNNCell):
 
         if self.hparams.where_add not in ('input', 'all', 'middle'):
             raise ValueError('Invalid where_add %s' % self.hparams.where_add)
+        
+        assert len(self.hparams.encoder_layer_size_mult) == len(self.hparams.encoder_layer_use_rnn)
+        assert len(self.hparams.decoder_layer_size_mult) == len(self.hparams.decoder_layer_use_rnn)
+
+        self.encoder_layer_specs = [(mult * self.hparams.ngf, use_rnn) for mult, use_rnn in 
+                                    zip(self.hparams.encoder_layer_size_mult, self.hparams.encoder_layer_use_rnn)]
+        self.decoder_layer_specs = [(mult * self.hparams.ngf, use_rnn) for mult, use_rnn in 
+                                    zip(self.hparams.decoder_layer_size_mult, self.hparams.decoder_layer_use_rnn)]
 
         batch_size = inputs['images'].shape[1].value
         image_shape = inputs['images'].shape.as_list()[2:]
         height, width, _ = image_shape
-        scale_size = max(height, width)
-        if scale_size == 256:
-            self.encoder_layer_specs = [
-                (self.hparams.ngf, False),
-                (self.hparams.ngf * 2, False),
-                (self.hparams.ngf * 4, True),
-                (self.hparams.ngf * 8, True),
-                (self.hparams.ngf * 8, True),
-            ]
-            self.decoder_layer_specs = [
-                (self.hparams.ngf * 8, True),
-                (self.hparams.ngf * 4, True),
-                (self.hparams.ngf * 2, False),
-                (self.hparams.ngf, False),
-                (self.hparams.ngf, False),
-            ]
-        elif scale_size == 128:
-            self.encoder_layer_specs = [
-                (self.hparams.ngf, True),
-                (self.hparams.ngf * 2, True),
-                (self.hparams.ngf * 4, True),
-                (self.hparams.ngf * 8, True),
-            ]
-            self.decoder_layer_specs = [
-                (self.hparams.ngf * 4, True),
-                (self.hparams.ngf * 2, True),
-                (self.hparams.ngf, True),
-                (self.hparams.ngf, False),
-            ]
-
-        elif scale_size == 64:
-            self.encoder_layer_specs = [
-                (self.hparams.ngf, True),
-                (self.hparams.ngf * 2, True),
-                (self.hparams.ngf * 4, True),
-            ]
-            self.decoder_layer_specs = [
-                (self.hparams.ngf * 2, True),
-                (self.hparams.ngf, True),
-                (self.hparams.ngf, False),
-            ]
-        elif scale_size == 32:
-            self.encoder_layer_specs = [
-                (self.hparams.ngf, True),
-                (self.hparams.ngf * 2, True),
-            ]
-            self.decoder_layer_specs = [
-                (self.hparams.ngf, True),
-                (self.hparams.ngf, False),
-            ]
-        else:
-            raise NotImplementedError
 
         # output_size
         gen_input_shape = list(image_shape)

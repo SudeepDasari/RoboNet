@@ -24,7 +24,6 @@ class VPredTrainable(Trainable):
         inputs, targets = self._get_input_targets(DatasetClass, metadata, self.dataset_hparams)
 
         self._real_images = tf.concat(self._real_images, axis=0)
-
         self._estimator, self._scalar_metrics, self._tensor_metrics = model_fn(self._hparams.n_gpus, self._hparams.graph_type, 
                                                     False, inputs, targets, tf.estimator.ModeKeys.TRAIN, self.model_hparams)
         self._parameter_count = parameter_count = tf.reduce_sum([tf.reduce_prod(tf.shape(v)) for v in tf.trainable_variables()])
