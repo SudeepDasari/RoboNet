@@ -1,7 +1,8 @@
 from ray.tune import Trainable
 import pdb
 import tensorflow as tf
-from robonet.datasets import get_dataset_class, MultiplexedTensors, load_metadata
+from robonet.datasets import get_dataset_class, load_metadata
+from robonet.datasets.util.tensor_multiplexer import MultiplexedTensors
 from robonet.video_prediction.models import get_model_fn
 from robonet.video_prediction.utils import tf_utils
 import numpy as np
@@ -12,6 +13,10 @@ import time
 import glob
 
 
+# from robonet.video_prediction.training.util import split_model_inference
+
+
+
 class VPredTrainable(Trainable):
     def _setup(self, config):
         # run hparams are passed in through config dict
@@ -20,11 +25,18 @@ class VPredTrainable(Trainable):
 
         metadata = self._filter_metadata(load_metadata(config['data_directory']))
 
+        self._tensor_multiplexers = []
         self._real_images = []
         inputs, targets = self._get_input_targets(DatasetClass, metadata, self.dataset_hparams)
 
+        self._train_feed_dict, self._val_feed_dict = {}, {}
+        for t in self._tensor_multiplexers:
+            self._train_feed_dict.update(t.train)
+            self._val_feed_dict.update(t.val)
+
         self._real_images = tf.concat(self._real_images, axis=0)
-        self._estimator, self._scalar_metrics, self._tensor_metrics = model_fn(self._hparams.n_gpus, self._hparams.graph_type, 
+
+        self._estimator, self._scalar_metrics, self._tensor_metrics = model_fn(self._hparams.n_gpus, self._hparams.graph_type,
                                                     False, inputs, targets, tf.estimator.ModeKeys.TRAIN, self.model_hparams)
         self._parameter_count = parameter_count = tf.reduce_sum([tf.reduce_prod(tf.shape(v)) for v in tf.trainable_variables()])
 
@@ -32,12 +44,12 @@ class VPredTrainable(Trainable):
         self.saver = tf.train.Saver(max_to_keep=self._hparams.max_to_keep)
         self.sess = tf.Session()
         self.sess.run(tf.global_variables_initializer())
-        
+
         if self._hparams.restore_dir:
             meta_file = glob.glob(self._hparams.restore_dir + '/*.meta')
             self._restore(meta_file[0])
             self._restore_logs = False
-    
+
         print("parameter_count =", self.sess.run(parameter_count))
 
     def _extract_hparams(self, config):
@@ -58,9 +70,9 @@ class VPredTrainable(Trainable):
 
         if 'sequence_length' in model_hparams and 'load_T' not in dataset_hparams:
             dataset_hparams['load_T'] = model_hparams['sequence_length'] + 1
-        
+
         return dataset_hparams, model_hparams, hparams
-    
+
     def _default_hparams(self):
         default_dict = {
             'batch_size': 16,
@@ -96,7 +108,7 @@ class VPredTrainable(Trainable):
             unique_robots = metadata['robot'].frame.unique().tolist()
             all_metadata = metadata
             metadata = [all_metadata[all_metadata['robot'] == r] for r in unique_robots]
-            
+
         if self._hparams.robot:
             metadata = metadata[metadata['robot'] == self._hparams.robot]
 
@@ -110,45 +122,47 @@ class VPredTrainable(Trainable):
         if 'annotations' in data_loader:
             tensor_names = ['actions', 'images', 'states', 'annotations']
 
-        self._tensor_multiplexer = MultiplexedTensors(data_loader, tensor_names)
-        loaded_tensors = [self._tensor_multiplexer[k] for k in tensor_names]
-        
+        t = MultiplexedTensors(data_loader, tensor_names)
+        loaded_tensors = [t[k] for k in tensor_names]
+        self._tensor_multiplexers.append(t)
+        images = loaded_tensors[1][:, :, 0]          # grab cam 0
+
         self._real_annotations = None
-        self._real_images = loaded_tensors[1] = loaded_tensors[1][:, :, 0]              # grab cam 0 for images
+        # self._real_images = loaded_tensors[1] = loaded_tensors[1][:, :, 0]              # grab cam 0 for images
+        loaded_tensors[1] = loaded_tensors[1][:, :, 0]
         if 'annotations' in data_loader:
             loaded_tensors[3] = loaded_tensors[3][:, :, 0]                              # grab cam 0 for annotations
             self._real_annotations = loaded_tensors[3]
-        
+
         inputs, targets = {'actions': loaded_tensors[0]}, {}
         for k, v in zip(tensor_names[1:], loaded_tensors[1:]):
             inputs[k], targets[k] = v[:, :-1], v
-
+        self._real_images.append(inputs['images'])
         return inputs, targets
 
     def _train(self):
         itr = self.iteration
-        
+
         # no need to increment itr since global step is incremented by train_op
+        # real_images = tf.concat(self._real_images, axis=0)
         loss, train_op = self._estimator.loss, self._estimator.train_op
-        
+
         fetches = {'global_step': itr}
 
         start = time.time()
-        train_loss = self.sess.run([loss, train_op], feed_dict=self._tensor_multiplexer.train)[0]
+        train_loss = self.sess.run([loss, train_op], feed_dict=self._train_feed_dict)[0]
         fetches['metric/step_time'] = time.time() - start
-        
+
         if itr % self._hparams.image_summary_freq == 0:
             img_summary_get_ops = {'real_images':self._real_images,
                                    'pred_frames':self._tensor_metrics['pred_frames'],
-                                   }
-            if 'pred_targets' in self._tensor_metrics:  # used for embedding model
-                img_summary_get_ops['pred_targets'] = self._tensor_metrics['pred_targets']
-                img_summary_get_ops['inference_images'] = self._tensor_metrics['inference_images']
+                                   'pred_targets': self._tensor_metrics['pred_targets'],
+                                   'inference_images': self._tensor_metrics['inference_images']}
             if self._real_annotations is not None:
                 img_summary_get_ops.update({'real_annotation':self._real_annotations,
                                             'pred_distrib':self._tensor_metrics['pred_distrib']})
 
-            for name, fetch_mode in zip(['train', 'val'], [self._tensor_multiplexer.train, self._tensor_multiplexer.val]):
+            for name, fetch_mode in zip(['train', 'val'], [self._train_feed_dict, self._val_feed_dict]):
                 fetched_npy = self.sess.run(img_summary_get_ops, feed_dict=fetch_mode)
                 real_img, pred_img = fetched_npy['real_images'], fetched_npy['pred_frames']
 
@@ -156,29 +170,27 @@ class VPredTrainable(Trainable):
                     fetches['metric/image_summary/{}_all'.format(name)] = pad(fetched_npy['real_images'], self._hparams.pad_amount)
                     # real_img_inf, real_img = split_model_inference(real_img, params=self.model_hparams)
                     fetches['metric/image_summary/{}_inference'.format(name)] = pad(stbmajor(fetched_npy['inference_images']), self._hparams.pad_amount)
-                    fetches['metric/image_summary/{}'.format(name)] = pad_and_concat(stbmajor(fetched_npy['pred_targets']), fetched_npy['pred_frames'], self._hparams.pad_amount)
-                else:  # used for everything else:
-                    fetches['metric/image_summary/{}'.format(name)] = pad_and_concat(fetched_npy['real_images'], fetched_npy['pred_frames'], self._hparams.pad_amount)
 
+                fetches['metric/image_summary/{}'.format(name)] = pad_and_concat(stbmajor(fetched_npy['pred_targets']), fetched_npy['pred_frames'], self._hparams.pad_amount)
                 if self._real_annotations is not None and name != 'train':
-                    dists = (fetched_npy['real_annotation'], fetched_npy['pred_distrib'])
-                    for o in range(len(dists)):
+                    for o in range(fetched_npy[-2].shape[-1]):
                         dist_name = 'robot'
                         if o > 0:
                             dist_name = 'object{}'.format(o)
-                        real_dist, pred_dist = [render_dist(x[:, :, :, :, o]) for x in dists]
+
+                        real_dist, pred_dist = [render_dist(x[:, :, :, :, o]) for x in (fetched_npy['real_annotation'], fetched_npy['pred_distrib'])]
                         fetches['metric/{}_pixel_warp/{}'.format(dist_name, name)] = pad_and_concat(real_dist, pred_dist, self._hparams.pad_amount)
 
         if itr % self._hparams.scalar_summary_freq == 0:
             fetches['metric/loss/train'] = train_loss
-            fetches['metric/loss/val'] = self.sess.run(loss, feed_dict=self._tensor_multiplexer.val)
-            for name, mode in zip(['train', 'val'], [self._tensor_multiplexer.train, self._tensor_multiplexer.val]):
+            fetches['metric/loss/val'] = self.sess.run(loss, feed_dict=self._val_feed_dict)
+            for name, mode in zip(['train', 'val'], [self._train_feed_dict, self._val_feed_dict]):
                 metrics = self.sess.run(self._scalar_metrics, feed_dict=mode)
                 for key, value in metrics.items():
                     fetches['metric/{}/{}'.format(key, name)] = value
 
         fetches['done'] = itr >= self._hparams.max_steps
-        
+
         if self._hparams.restore_dir and not self._restore_logs:
             fetches['restore_logs'] = self._hparams.restore_dir
             self._restore_logs = True
@@ -205,3 +217,4 @@ class VPredTrainable(Trainable):
     @property
     def iteration(self):
         return self.sess.run(self._global_step)
+

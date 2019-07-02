@@ -7,7 +7,5 @@
     "target_adim": 5,
     "color_augmentation":true,
     "action_mismatch": 1,
-    "state_mismatch": 1,
-    "robot_set": ["baxter", "franka", "sawyer"],
-    "load_annotations": true
+    "state_mismatch": 1
 }
