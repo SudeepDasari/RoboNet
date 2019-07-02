@@ -98,6 +98,7 @@ def average_and_repeat(enc, params, tlen):
 def deterministic_embedding_generator(num_gpus, graph_type, tpu_mode, inputs, targets, mode, params):
     # get graph class and setup default hyper-parameters
     logger = logging.getLogger(__name__)
+
     graph_class = get_graph_class(graph_type)
     default_hparams = dict(itertools.chain(graph_class.default_hparams().items(), loss_default_hparams(graph_class).items()))
     hparams = HParams(**default_hparams).override_from_dict(params)

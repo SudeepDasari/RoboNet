@@ -10,6 +10,7 @@ import logging
 from collections import OrderedDict
 from robonet.video_prediction import losses
 from robonet.video_prediction import metrics
+import pdb
 
 
 def loss_default_hparams(graph_class):
@@ -60,6 +61,7 @@ def vpred_generator(num_gpus, graph_type, tpu_mode, model_inputs, model_targets,
 
     # build the graph
     model_graph = graph_class()
+
     if num_gpus == 1:
         outputs = model_graph.build_graph(inputs, hparams)
     else:

@@ -39,7 +39,6 @@ class DeterministicWrapper(BaseGraph):
     def default_hparams():
         default_params =  {
             "where_add": "all",
-            'ngf': 32,
             'last_frames': 2,
             'num_transformed_images': 4,
             'prev_image_background': True,
@@ -65,6 +64,13 @@ class DeterministicWrapper(BaseGraph):
             'sub_batch_size': None,   # gets poplated from dataset_hparam
             'batch_size': None,      # gets poplated from dataset_hparam
             'encoder': 'one_step',
-            'stochastic': False
+            'stochastic': False,
+
+            # params below control size of model
+            'ngf': 32,
+            'encoder_layer_size_mult': [1, 2, 4],
+            'encoder_layer_use_rnn': [True, True, True],
+            'decoder_layer_size_mult': [2, 1, 1],
+            'decoder_layer_use_rnn': [True, True, False]
         }
         return dict(itertools.chain(BaseGraph.default_hparams().items(), default_params.items()))

@@ -1,6 +1,6 @@
 {
-    "model": "deterministic",
-    "graph_type": "c_dna_flow",
+    "model": "det_embedding",
+    "graph_type": "deterministic_graph",
     "lr": 0.001,
     "end_lr": 0.0,
     "decay_steps": [200000, 300000],
@@ -33,5 +33,6 @@
     "c_dna_kernel_size": [5, 5],              
     "schedule_sampling": "inverse_sigmoid",
     "schedule_sampling_k": 900.0,
-    "schedule_sampling_steps": [0, 100000]
+    "schedule_sampling_steps": [0, 100000],
+    "encoder": "None"
 }

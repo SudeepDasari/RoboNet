@@ -7,7 +7,7 @@ def get_dataset_class(name):
         from .robonet_dataset import RoboNetDataset
         return RoboNetDataset
     elif name == 'AnnotatedRoboNet':
-        from .variants.val_filter_dataset_variants import AnnotationBenchmarkDataset
+        from robonet.datasets.variants.annotation_benchmark_dataset import AnnotationBenchmarkDataset
         return AnnotationBenchmarkDataset
     elif name == 'AnnotationHeldoutRobotDataset':
         from .variants.val_filter_dataset_variants import AnnotationHeldoutRobotDataset
