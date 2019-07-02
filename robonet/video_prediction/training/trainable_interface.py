@@ -7,7 +7,7 @@ from robonet.video_prediction.utils import tf_utils
 import numpy as np
 import os
 from tensorflow.contrib.training import HParams
-from .util import pad_and_concat, render_dist, pad
+from .util import pad_and_concat, render_dist, pad, stbmajor
 import time
 import glob
 
@@ -24,7 +24,6 @@ class VPredTrainable(Trainable):
         inputs, targets = self._get_input_targets(DatasetClass, metadata, self.dataset_hparams)
 
         self._real_images = tf.concat(self._real_images, axis=0)
-
         self._estimator, self._scalar_metrics, self._tensor_metrics = model_fn(self._hparams.n_gpus, self._hparams.graph_type, 
                                                     False, inputs, targets, tf.estimator.ModeKeys.TRAIN, self.model_hparams)
         self._parameter_count = parameter_count = tf.reduce_sum([tf.reduce_prod(tf.shape(v)) for v in tf.trainable_variables()])
@@ -206,14 +205,3 @@ class VPredTrainable(Trainable):
     @property
     def iteration(self):
         return self.sess.run(self._global_step)
-
-
-def stbmajor(ten):
-    """
-    swap time-batch major
-    :param ten:  npy tenosr
-    :return:
-    """
-    return np.transpose(ten, [1, 0] + list(range(2,len(ten.shape))))
-
-

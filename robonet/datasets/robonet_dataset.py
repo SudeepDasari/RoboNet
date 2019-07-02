@@ -28,36 +28,12 @@ class RoboNetDataset(BaseVideoDataset):
                     print('sub-batch has data with different ncam but each same_cam_across_sub_batch=True! Could result in un-even cam sampling')
                     break
         
+        # check batch_size
         assert self._batch_size % self._hparams.sub_batch_size == 0, "sub batches should evenly divide batch_size!"
-        assert np.isclose(sum(self._hparams.splits), 1) and all([0 <= i <= 1 for i in self._hparams.splits]), "splits is invalid"
+        # assert np.isclose(sum(self._hparams.splits), 1) and all([0 <= i <= 1 for i in self._hparams.splits]), "splits is invalid"
         assert self._hparams.load_T >=0, "load_T should be non-negative!"
-
-        n_train_ex = 0
-        self._train_sources, self._val_sources, self._test_sources = [[] for _ in range(3)]
         
-        # smallest max step length of all dataset sources 
-        min_steps = min([min(min(m.frame['img_T']), min(m.frame['state_T'])) for m in self._metadata])
-        if not self._hparams.load_T:
-            self._hparams.load_T = min_steps
-        else:
-            assert self._hparams.load_T <= min_steps, "ask to load {} steps but some records only have {}!".format(self._hparams.min_T, min_steps)
-
-        for metadata in self._metadata:
-            train_files, val_files, test_files = self._split_files(metadata)
-            if train_files:
-                self.rng.shuffle(train_files) 
-                self._train_sources.append((train_files, metadata))
-            if val_files:
-                self.rng.shuffle(val_files) 
-                self._val_sources.append((val_files, metadata))
-            if test_files:
-                self.rng.shuffle(test_files) 
-                self._test_sources.append((test_files, metadata))
-
-        for frac, source, name in zip(self._hparams.splits, [self._train_sources, self._val_sources, self._test_sources], self.modes):
-            if frac:
-                assert len(source) and sum([len(s[0]) for s in source]), "mode {} has split {} but no records".format(name, frac)
-
+        # set output format
         output_format = [tf.uint8, tf.float32, tf.float32]        
         if self._hparams.load_annotations:
             output_format = output_format + [tf.float32]
@@ -66,43 +42,38 @@ class RoboNetDataset(BaseVideoDataset):
             output_format = output_format + [tf.string]
         output_format = tuple(output_format)
 
-        self._data_loaders = {}
-        # DON'T WRITE THIS SECTION WITH A FOR LOOP
-        # YOU MUST CALL next(generator) OR ELSE TENSORFLOW SOMETIMES CRASHES
-        # IF YOU KNOW WHY THESE BUGS HAPPENS YOU DESERVE A TURING AWARD
-        # TRAIN
+        # smallest max step length of all dataset sources 
+        min_steps = min([min(min(m.frame['img_T']), min(m.frame['state_T'])) for m in self._metadata])
+        if not self._hparams.load_T:
+            self._hparams.load_T = min_steps
+        else:
+            assert self._hparams.load_T <= min_steps, "ask to load {} steps but some records only have {}!".format(self._hparams.min_T, min_steps)
+
         n_workers = min(self._batch_size, multiprocessing.cpu_count())
         if self._hparams.pool_workers:
             n_workers = min(self._hparams.pool_workers, multiprocessing.cpu_count())
         self._pool = multiprocessing.Pool(n_workers)
 
-        if len(self._train_sources):
-            train_s, train_s_m = [[t[j] for t in self._train_sources] for j in range(2)]
-            n_train_ex = sum(len(f) for f in train_s)
-            train_generator = self._hdf5_generator(train_s, train_s_m, self.train_rng, 'train')
-            dataset = tf.data.Dataset.from_generator(lambda: train_generator, output_format)
-            dataset = dataset.map(self._get_dict).prefetch(self._hparams.buffer_size)
-            self._data_loaders['train'] = dataset.make_one_shot_iterator().get_next()
-        else:
-            print('no train files')
+        n_train_ex = 0
+        mode_sources = [[] for _ in range(len(self.modes))]
+        for metadata in self._metadata:
+            files_per_source = self._split_files(metadata)
+            assert len(files_per_source) == len(self.modes), "files should be split into {} sets (it's okay if sets are empty)".format(len(self.modes))
+            for m, fps in zip(mode_sources, files_per_source):
+                m.append((fps, metadata))                
 
-        if len(self._val_sources):
-            val_s, val_s_m = [[v[j] for v in self._val_sources] for j in range(2)]
-            val_generator = self._hdf5_generator(val_s, val_s_m, self.val_rng, 'val')
-            dataset = tf.data.Dataset.from_generator(lambda: val_generator, output_format)
-            dataset = dataset.map(self._get_dict).prefetch(max(int(self._hparams.buffer_size / 10), 1))
-            self._data_loaders['val'] = dataset.make_one_shot_iterator().get_next()
-        else:
-            print('no val files')
-        
-        if len(self._test_sources):
-            test_s, test_s_m = [[t[j] for t in self._train_sources] for j in range(2)]
-            test_generator = self._hdf5_generator(test_s, test_s_m, self.test_rng, 'test')
-            dataset = tf.data.Dataset.from_generator(lambda: test_generator, output_format)
-            dataset = dataset.map(self._get_dict).prefetch(max(int(self._hparams.buffer_size / 10), 1))
-            self._data_loaders['test'] = dataset.make_one_shot_iterator().get_next()
-        else:
-            print('no test files')
+        self._data_loaders = {}
+        for name, m in zip(self.modes, mode_sources):
+            if m:
+                rng = self._random_generator[name]
+                mode_source_files, mode_source_metadata = [[t[j] for t in m] for j in range(2)]
+                if name == 'train':
+                    n_train_ex = sum([len(f) for f in mode_source_files])
+                
+                gen_func = self._wrap_generator(mode_source_files, mode_source_metadata, rng, name)
+                dataset = tf.data.Dataset.from_generator(gen_func, output_format)
+                dataset = dataset.map(self._get_dict).prefetch(self._hparams.buffer_size)
+                self._data_loaders[name] = dataset.make_one_shot_iterator().get_next()
 
         return n_train_ex
 
@@ -141,17 +112,20 @@ class RoboNetDataset(BaseVideoDataset):
             'splits': (0.9, 0.05, 0.05),             # train, val, test
             'num_epochs': None,                      # maximum number of epochs (None if iterate forever)
             'ret_fnames': False,                     # return file names of loaded hdf5 record
-            'buffer_size': 10,                        # examples to prefetch
+            'buffer_size': 10,                       # examples to prefetch
             'all_modes_max_workers': True,           # use multi-threaded workers regardless of the mode
             'load_random_cam': True,                 # load a random camera for each example
             'same_cam_across_sub_batch': False,      # same camera across sub_batches
-            'pool_workers': 0,                        # number of workers for pool (if 0 uses batch_size workers)
+            'pool_workers': 0,                       # number of workers for pool (if 0 uses batch_size workers)
             'color_augmentation':False
         }
         for k, v in default_loader_hparams().items():
             default_dict[k] = v
         
         return HParams(**default_dict)
+
+    def _wrap_generator(self, source_files, source_metadata, rng, mode):
+        return lambda : self._hdf5_generator(source_files, source_metadata, rng, mode)
 
     def _hdf5_generator(self, sources, sources_metadata, rng, mode): 
         file_indices, source_epochs = [[0 for _ in range(len(sources))] for _ in range(2)]
@@ -165,12 +139,18 @@ class RoboNetDataset(BaseVideoDataset):
             
             file_names, file_metadata = [], []
             b = 0
+            sources_selected_thus_far = []
             while len(file_names) < self._batch_size:
                 # if # sources <= # sub_batches then sample each source at least once per batch
                 if len(sources) <= self._batch_size // self._hparams.sub_batch_size and b // self._hparams.sub_batch_size < len(sources):
                     selected_source = b // self._hparams.sub_batch_size
+                elif len(sources) > self._batch_size // self._hparams.sub_batch_size:
+                    selected_source = rng.randint(0, len(sources) - 1)
+                    while selected_source in sources_selected_thus_far:
+                        selected_source = rng.randint(0, len(sources) - 1)
                 else:
                     selected_source = rng.randint(0, len(sources) - 1)
+                sources_selected_thus_far.append(selected_source)
 
                 for sb in range(self._hparams.sub_batch_size):
                     selected_file = sources[selected_source][file_indices[selected_source]]
@@ -256,9 +236,6 @@ class RoboNetDataset(BaseVideoDataset):
         return out_dict
 
 
-
-
-
 def _timing_test(N, loader):
     import time
     import random
@@ -285,7 +262,6 @@ def _timing_test(N, loader):
 
 if __name__ == '__main__':
     import argparse
-
     parser = argparse.ArgumentParser(description="calculates or loads meta_data frame")
     parser.add_argument('path', help='path to files containing hdf5 dataset')
     parser.add_argument('--robots', type=str, nargs='+', default=None, help='will construct a dataset with batches split across given robots')

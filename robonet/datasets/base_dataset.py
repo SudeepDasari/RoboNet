@@ -91,18 +91,3 @@ class BaseVideoDataset(object):
     def modes(self):
         return ['train', 'val', 'test']
 
-    @property
-    def rng(self):
-        return self._random_generator['base']
-
-    @property
-    def train_rng(self):
-        return self._random_generator['train']
-    
-    @property
-    def test_rng(self):
-        return self._random_generator['test']
-    
-    @property
-    def val_rng(self):
-        return self._random_generator['val']

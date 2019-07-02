@@ -1,24 +1,15 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import pdb
 
-# def split_model_inference(real_images, params):
-#     """
-#     we use separate trajectories for the encoder than from the ones used for prediction training
-#     :param inputs: dict with tensors in *time-major*
-#     :param targets:dict with tensors in *time-major*
-#     :return:
-#     """
-#     sbs = params['sub_batch_size']
-#     bs = params['batch_size']
-#     first_half = []
-#     second_half = []
-#     for i in range(bs // sbs):
-#         first_half.append(real_images[sbs * i:sbs * i + sbs // 2])
-#         second_half.append(real_images[sbs * i + sbs // 2:sbs * (i + 1)])
-#     first_half = np.concatenate(first_half, 0)
-#     second_half = np.concatenate(second_half, 0)
-#     return first_half, second_half
+
+def stbmajor(ten):
+    """
+    swap time-batch major
+    :param ten:  npy tenosr
+    :return:
+    """
+    return np.transpose(ten, [1, 0] + list(range(2,len(ten.shape))))
+
 
 def pad(real_frames, pad_amount):
     tensor = (real_frames * 255).astype(np.uint8)

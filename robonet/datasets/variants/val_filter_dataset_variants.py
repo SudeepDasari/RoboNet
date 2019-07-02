@@ -3,6 +3,9 @@ from tensorflow.contrib.training.python.training.hparam import HParams
 import pdb
 
 
+"""
+Should perhaps update these to work with new API
+"""
 class ValFilterDataset(RoboNetDataset):
     """
     Separates files that have annotations and those which don't
@@ -48,30 +51,6 @@ class HeldoutRobotDataset(ValFilterDataset):
         train_metadata = train_metadata[train_metadata['robot'] != self._hparams.held_out_robot]
         val_metadata = val_metadata[val_metadata['robot'] == self._hparams.held_out_robot]
         print('after filtering robots: number of trainfiles {} number of val files {}'.format(len(train_metadata.files), len(val_metadata.files)))
-        return train_metadata, val_metadata
-
-
-class AnnotationBenchmarkDataset(ValFilterDataset):
-    """
-    Separates files that have annotations and those which don't
-        - files with annotations are loaded as validation files
-        - all others are loaded as train/test
-    """
-    @staticmethod
-    def _get_default_hparams(parent_hparams=None):
-        if parent_hparams is None:
-            parent_hparams = ValFilterDataset._get_default_hparams()
-        parent_hparams.load_annotations = True
-        parent_hparams.zero_if_missing_annotation = True
-        return parent_hparams
-
-    def train_val_filter(self, train_metadata, val_metadata):
-        assert self._hparams.splits[1], "mode only works with validation records"
-        assert self._hparams.load_annotations, "mode requires annotation loading"
-        assert self._hparams.zero_if_missing_annotation, "mode requires some files to not be annotated"
-        train_metadata = train_metadata[train_metadata['contains_annotation'] != True]
-        val_metadata = val_metadata[val_metadata['contains_annotation'] == True]
-        print('after filtering annotation files: number of trainfiles {} number of val files {}'.format(len(train_metadata.files), len(val_metadata.files)))
         return train_metadata, val_metadata
 
 
