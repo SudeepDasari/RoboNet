@@ -1,4 +1,5 @@
 from robonet.datasets.robonet_dataset import RoboNetDataset
+from robonet.datasets.util.dataset_utils import split_train_val_test
 
 
 class AnnotationBenchmarkDataset(RoboNetDataset):
@@ -17,30 +18,21 @@ class AnnotationBenchmarkDataset(RoboNetDataset):
             parent_hparams = RoboNetDataset._get_default_hparams()
         parent_hparams.load_annotations = True
         parent_hparams.zero_if_missing_annotation = True
-        parent_hparams.splits = [0.9, 0.1]
         return parent_hparams
 
     def _split_files(self, metadata):
-        assert len(self._hparams.splits) == 2, "mode only support splitting into train/test (val implied by annotations)"
         assert self._hparams.load_annotations, "mode requires annotation loading"
         assert self._hparams.zero_if_missing_annotation, "mode requires some files to not be annotated"
 
-        non_annotated_files = metadata[metadata['contains_annotation'] != True].files
-        train_pivot = int(len(non_annotated_files) * self._hparams.splits[0])
-        train_files, test_files = non_annotated_files[:train_pivot], non_annotated_files[train_pivot:]
+        non_annotated_metadata = metadata[metadata['contains_annotation'] != True]
+        train_files, val_files, test_files = split_train_val_test(non_annotated_metadata, self._hparams.splits)
         
-        val_metadata = metadata[metadata['contains_annotation'] == True]
-        val_files = val_metadata.files
-        robot_files = [val_metadata[val_metadata['robot'] == r].files for r in self._annotated_robots]
+        all_annotated = metadata[metadata['contains_annotation'] == True]
+        robot_files = [all_annotated[all_annotated['robot'] == r].files for r in self._annotated_robots]
 
-        return [train_files, val_files, test_files] + robot_files
-        
-    
-    def train_val_filter(self, train_metadata, val_metadata):
-        train_metadata = train_metadata[train_metadata['contains_annotation'] != True]
-        val_metadata = val_metadata[val_metadata['contains_annotation'] == True]
-        print('after filtering annotation files: number of trainfiles {} number of val files {}'.format(len(train_metadata.files), len(val_metadata.files)))
-        return train_metadata, val_metadata
+        if len(self._annotated_robots) == 1:
+            return [train_files, val_files, test_files] + robot_files
+        return [train_files, val_files, test_files] + [all_annotated_files] + robot_files
     
     @property
     def modes(self):
@@ -50,7 +42,12 @@ class AnnotationBenchmarkDataset(RoboNetDataset):
                 annotated_robots_from_source = m[m['contains_annotation'] == True]['robot'].frame.unique().tolist()
                 self._annotated_robots.extend(annotated_robots_from_source)
             self._annotated_robots = list(set(self._annotated_robots))
-        return ['train', 'val', 'test'] + ['{}_annotated'.format(r) for r in self._annotated_robots]
+
+        all_annotated_mode = []
+        if len(self._annotated_robots) > 1:
+            all_annotated_mode = ['all_annotated']
+    
+        return ['train', 'val', 'test'] + all_annotated_mode + ['{}_annotated'.format(r) for r in self._annotated_robots]
 
 
 if __name__ == '__main__':

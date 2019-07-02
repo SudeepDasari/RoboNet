@@ -90,15 +90,15 @@ def vpred_generator(num_gpus, graph_type, tpu_mode, model_inputs, model_targets,
             tensor_summaries['pred_distrib'] = tf.transpose(outputs['gen_pix_distribs'], [1, 0, 2, 3, 4])
             expected_dist = metrics.expected_pixel_distance(targets['pix_distribs'], outputs['gen_pix_distribs'])
             expected_square_dist = metrics.expected_square_pixel_distance(targets['pix_distribs'], outputs['gen_pix_distribs'])
-            std_dist = tf.sqrt(expected_square_dist - tf.square(expected_dist))
-            expected_dist, std_dist = [tf.reduce_sum(x, 0) for x in [expected_dist, std_dist]]
+            var_dist = expected_square_dist - tf.square(expected_dist)
+            expected_dist, var_dist = [tf.reduce_sum(x, 0) for x in [expected_dist, var_dist]]
 
             scalar_summaries['robot_pixel_distance'] = tf.reduce_mean(expected_dist[:, 0])
-            scalar_summaries['robot_pixel_std'] = tf.reduce_mean(std_dist[:, 0])
+            scalar_summaries['robot_pixel_var'] = tf.reduce_mean(var_dist[:, 0])
             if expected_dist.get_shape().as_list()[-1] > 1:
                 for o in range(1, expected_dist.get_shape().as_list()[-1]):
                     scalar_summaries['object{}_pixel_distance'.format(o)] = tf.reduce_mean(expected_dist[:, o])
-                    scalar_summaries['object{}_pixel_std'.format(o)] = tf.reduce_mean(std_dist[:, o])
+                    scalar_summaries['object{}_pixel_std'.format(o)] = tf.reduce_mean(var_dist[:, o])
     
         if 'ground_truth_sampling_mean' in outputs:
             scalar_summaries['ground_truth_sampling_mean'] = outputs['ground_truth_sampling_mean']

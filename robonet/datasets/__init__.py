@@ -1,5 +1,5 @@
 from .util.metadata_helper import load_metadata
-from .util.tensor_multiplexer import multiplex_train_val_test, MultiplexedTensors
+from .util.tensor_multiplexer import multiplex_tensors, MultiplexedTensors
 
 
 def get_dataset_class(name):
@@ -7,7 +7,7 @@ def get_dataset_class(name):
         from .robonet_dataset import RoboNetDataset
         return RoboNetDataset
     elif name == 'AnnotatedRoboNet':
-        from .variants.val_filter_dataset_variants import AnnotationBenchmarkDataset
+        from .variants.annotation_benchmark_dataset import AnnotationBenchmarkDataset
         return AnnotationBenchmarkDataset
     elif name == 'AnnotationHeldoutRobotDataset':
         from .variants.val_filter_dataset_variants import AnnotationHeldoutRobotDataset

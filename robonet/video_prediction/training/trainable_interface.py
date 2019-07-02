@@ -134,7 +134,7 @@ class VPredTrainable(Trainable):
         fetches = {'global_step': itr}
 
         start = time.time()
-        train_loss = self.sess.run([loss, train_op], feed_dict=self._tensor_multiplexer.train)[0]
+        train_loss = self.sess.run([loss, train_op], feed_dict=self._tensor_multiplexer.get_feed_dict('train'))[0]
         fetches['metric/step_time'] = time.time() - start
         
         if itr % self._hparams.image_summary_freq == 0:
@@ -144,11 +144,16 @@ class VPredTrainable(Trainable):
             if 'pred_targets' in self._tensor_metrics:  # used for embedding model
                 img_summary_get_ops['pred_targets'] = self._tensor_metrics['pred_targets']
                 img_summary_get_ops['inference_images'] = self._tensor_metrics['inference_images']
+            
             if self._real_annotations is not None:
                 img_summary_get_ops.update({'real_annotation':self._real_annotations,
                                             'pred_distrib':self._tensor_metrics['pred_distrib']})
-
-            for name, fetch_mode in zip(['train', 'val'], [self._tensor_multiplexer.train, self._tensor_multiplexer.val]):
+                annotation_modes = [m for m in self._tensor_multiplexer.modes if '_annotated' in m]
+            else:
+                annotation_modes = []
+            
+            for name in ['train', 'val'] + annotation_modes:
+                fetch_mode = self._tensor_multiplexer.get_feed_dict(name)
                 fetched_npy = self.sess.run(img_summary_get_ops, feed_dict=fetch_mode)
                 real_img, pred_img = fetched_npy['real_images'], fetched_npy['pred_frames']
 
@@ -160,7 +165,7 @@ class VPredTrainable(Trainable):
                 else:  # used for everything else:
                     fetches['metric/image_summary/{}'.format(name)] = pad_and_concat(fetched_npy['real_images'], fetched_npy['pred_frames'], self._hparams.pad_amount)
 
-                if self._real_annotations is not None and name != 'train':
+                if self._real_annotations is not None and '_annotated' in name:
                     dists = (fetched_npy['real_annotation'], fetched_npy['pred_distrib'])
                     for o in range(len(dists)):
                         dist_name = 'robot'
@@ -171,10 +176,13 @@ class VPredTrainable(Trainable):
 
         if itr % self._hparams.scalar_summary_freq == 0:
             fetches['metric/loss/train'] = train_loss
-            fetches['metric/loss/val'] = self.sess.run(loss, feed_dict=self._tensor_multiplexer.val)
-            for name, mode in zip(['train', 'val'], [self._tensor_multiplexer.train, self._tensor_multiplexer.val]):
-                metrics = self.sess.run(self._scalar_metrics, feed_dict=mode)
+            fetches['metric/loss/val'] = self.sess.run(loss, feed_dict=self._tensor_multiplexer.get_feed_dict('val'))
+            for name in ['train', 'val'] + annotation_modes:
+                metrics = self.sess.run(self._scalar_metrics, feed_dict=self._tensor_multiplexer.get_feed_dict(name))
                 for key, value in metrics.items():
+                    if 'pixel' in key and '_annotated' not in name:
+                        # doesn't log pixel metrics for trajs which don't have pixels
+                        continue
                     fetches['metric/{}/{}'.format(key, name)] = value
 
         fetches['done'] = itr >= self._hparams.max_steps

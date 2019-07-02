@@ -1,7 +1,7 @@
 from robonet.datasets.base_dataset import BaseVideoDataset
 from robonet.datasets.util.hdf5_loader import load_data, default_loader_hparams
 from tensorflow.contrib.training import HParams
-from robonet.datasets.util.dataset_utils import color_augment
+from robonet.datasets.util.dataset_utils import color_augment, split_train_val_test
 import numpy as np
 import tensorflow as tf
 import copy
@@ -60,7 +60,8 @@ class RoboNetDataset(BaseVideoDataset):
             files_per_source = self._split_files(metadata)
             assert len(files_per_source) == len(self.modes), "files should be split into {} sets (it's okay if sets are empty)".format(len(self.modes))
             for m, fps in zip(mode_sources, files_per_source):
-                m.append((fps, metadata))                
+                if len(fps):
+                    m.append((fps, metadata))                
 
         self._data_loaders = {}
         for name, m in zip(self.modes, mode_sources):
@@ -78,24 +79,7 @@ class RoboNetDataset(BaseVideoDataset):
         return n_train_ex
 
     def _split_files(self, metadata):
-        files = metadata.files
-        train_files, val_files, test_files = None, None, None
-        splits = np.cumsum([int(i * len(files)) for i in self._hparams.splits]).tolist()
-       
-        # give extra fat to val set
-        if splits[-1] < len(files):
-            diff = len(files) - splits[-1]
-            for i in range(1, len(splits)):
-                splits[i] += diff
-        
-        if self._hparams.splits[0]:
-            train_files = files[:splits[0]]
-        if self._hparams.splits[1]:
-            val_files = files[splits[0]: splits[1]]
-        if self._hparams.splits[2]:
-            test_files = files[splits[1]: splits[2]]
-        
-        return train_files, val_files, test_files
+        return split_train_val_test(metadata, self._hparams.splits)
 
     def _get(self, key, mode):
         return self._data_loaders[mode][key]
