@@ -16,7 +16,7 @@
     "sequence_length": 15,
     "context_frames": 2,
     "use_states": false,
-    "ngf": 48,
+    "ngf": 32,
     "last_frames": 2,
     "num_transformed_images": 4,
     "prev_image_background": true,

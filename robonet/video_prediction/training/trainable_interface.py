@@ -91,15 +91,21 @@ class VPredTrainable(Trainable):
         if self._hparams.filter_adim:
             metadata = metadata[metadata['adim'] == self._hparams.filter_adim]
 
-        if self._hparams.balance_across_robots:
-            assert not self._hparams.robot, "can't balance across a single robot"
+        if self._hparams.balance_across_robots or self._hparams.robot == 'all_balanced':
+            assert not self._hparams.robot or self._hparams.robot == 'all_balanced', "can't balance across one robot!"
             unique_robots = metadata['robot'].frame.unique().tolist()
             all_metadata = metadata
-            metadata = [all_metadata[all_metadata['robot'] == r] for r in unique_robots]
-            
-        if self._hparams.robot:
+            metadata = [all_metadata[all_metadata['robot'] == r] for r in unique_robots]  
+        elif self._hparams.robot:
             metadata = metadata[metadata['robot'] == self._hparams.robot]
-
+        
+        if 'train_ex_per_source' in self.dataset_hparams:
+            if not isinstance(self.dataset_hparams['train_ex_per_source'], list):
+                print('train_ex_per_source is not a list! Automatically broadcasting...')
+                if isinstance(metadata, list):
+                    self.dataset_hparams['train_ex_per_source'] = [self.dataset_hparams['train_ex_per_source'] for _ in range(len(metadata))]
+                else:
+                    self.dataset_hparams['train_ex_per_source'] = [self.dataset_hparams['train_ex_per_source']]
         return metadata
 
     def _get_input_targets(self, DatasetClass, metadata, dataset_hparams):

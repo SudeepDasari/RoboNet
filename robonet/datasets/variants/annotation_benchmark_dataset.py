@@ -20,12 +20,15 @@ class AnnotationBenchmarkDataset(RoboNetDataset):
         parent_hparams.zero_if_missing_annotation = True
         return parent_hparams
 
-    def _split_files(self, metadata):
+    def _split_files(self, source_number, metadata):
         assert self._hparams.load_annotations, "mode requires annotation loading"
         assert self._hparams.zero_if_missing_annotation, "mode requires some files to not be annotated"
 
         non_annotated_metadata = metadata[metadata['contains_annotation'] != True]
-        train_files, val_files, test_files = split_train_val_test(non_annotated_metadata, self._hparams.splits, self._random_generator['base'])
+        
+        if self._hparams.train_ex_per_source != [-1]:
+            train_files, val_files, test_files = split_train_val_test(metadata, train_ex=self._hparams.train_ex_per_source[source_number], rng=self._random_generator['base'])
+        train_files, val_files, test_files = split_train_val_test(non_annotated_metadata, splits=self._hparams.splits, rng=self._random_generator['base'])
         
         all_annotated = metadata[metadata['contains_annotation'] == True]
         robot_files = [all_annotated[all_annotated['robot'] == r].files for r in self._annotated_robots]

@@ -32,7 +32,7 @@ class RoboNetDataset(BaseVideoDataset):
         assert self._batch_size % self._hparams.sub_batch_size == 0, "sub batches should evenly divide batch_size!"
         # assert np.isclose(sum(self._hparams.splits), 1) and all([0 <= i <= 1 for i in self._hparams.splits]), "splits is invalid"
         assert self._hparams.load_T >=0, "load_T should be non-negative!"
-        
+
         # set output format
         output_format = [tf.uint8, tf.float32, tf.float32]        
         if self._hparams.load_annotations:
@@ -56,8 +56,8 @@ class RoboNetDataset(BaseVideoDataset):
 
         n_train_ex = 0
         mode_sources = [[] for _ in range(len(self.modes))]
-        for metadata in self._metadata:
-            files_per_source = self._split_files(metadata)
+        for m_ind, metadata in enumerate(self._metadata):
+            files_per_source = self._split_files(m_ind, metadata)
             assert len(files_per_source) == len(self.modes), "files should be split into {} sets (it's okay if sets are empty)".format(len(self.modes))
             for m, fps in zip(mode_sources, files_per_source):
                 if len(fps):
@@ -79,8 +79,10 @@ class RoboNetDataset(BaseVideoDataset):
 
         return n_train_ex
 
-    def _split_files(self, metadata):
-        return split_train_val_test(metadata, self._hparams.splits, self._random_generator['base'])
+    def _split_files(self, source_number, metadata):
+        if self._hparams.train_ex_per_source != [-1]:
+            return split_train_val_test(metadata, train_ex=self._hparams.train_ex_per_source[source_number], rng=self._random_generator['base'])
+        return split_train_val_test(metadata, splits=self._hparams.splits, rng=self._random_generator['base'])
 
     def _get(self, key, mode):
         return self._data_loaders[mode][key]
@@ -102,7 +104,8 @@ class RoboNetDataset(BaseVideoDataset):
             'load_random_cam': True,                 # load a random camera for each example
             'same_cam_across_sub_batch': False,      # same camera across sub_batches
             'pool_workers': 0,                       # number of workers for pool (if 0 uses batch_size workers)
-            'color_augmentation':False
+            'color_augmentation':0.0,                # std of color augmentation (set to 0 for no augmentations)
+            'train_ex_per_source': [-1]              # list of train_examples per source (set to [-1] to rely on splits only)
         }
         for k, v in default_loader_hparams().items():
             default_dict[k] = v
@@ -208,7 +211,7 @@ class RoboNetDataset(BaseVideoDataset):
 
         out_dict['images'] = tf.cast(shaped_images, tf.float32) / 255.0
         if self._hparams.color_augmentation:
-            out_dict['images'] = color_augment(out_dict['images'])
+            out_dict['images'] = color_augment(out_dict['images'], self._hparams.color_augmentation)
 
         out_dict['actions'] = tf.reshape(actions, [self.batch_size, self._hparams.load_T - 1, self._hparams.target_adim])
         out_dict['states'] = tf.reshape(states, [self.batch_size, self._hparams.load_T, self._hparams.target_sdim])
