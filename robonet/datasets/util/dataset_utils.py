@@ -17,9 +17,9 @@ def color_augment(image):
     return image_rgb
 
 
-def split_train_val_test(metadata, splits):
+def split_train_val_test(metadata, splits, rng):
     assert len(splits) == 3, "function requires 3 split parameteres ordered (train, val ,test)"
-    files = metadata.files
+    files = metadata.get_shuffled_files(rng)
     train_files, val_files, test_files = None, None, None
     splits = np.cumsum([int(i * len(files)) for i in splits]).tolist()
     

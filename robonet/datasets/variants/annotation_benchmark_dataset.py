@@ -25,14 +25,14 @@ class AnnotationBenchmarkDataset(RoboNetDataset):
         assert self._hparams.zero_if_missing_annotation, "mode requires some files to not be annotated"
 
         non_annotated_metadata = metadata[metadata['contains_annotation'] != True]
-        train_files, val_files, test_files = split_train_val_test(non_annotated_metadata, self._hparams.splits)
+        train_files, val_files, test_files = split_train_val_test(non_annotated_metadata, self._hparams.splits, self._random_generator['base'])
         
         all_annotated = metadata[metadata['contains_annotation'] == True]
         robot_files = [all_annotated[all_annotated['robot'] == r].files for r in self._annotated_robots]
 
         if len(self._annotated_robots) == 1:
             return [train_files, val_files, test_files] + robot_files
-        return [train_files, val_files, test_files] + [all_annotated_files] + robot_files
+        return [train_files, val_files, test_files] + [all_annotated.files] + robot_files
     
     @property
     def modes(self):
@@ -61,7 +61,7 @@ if __name__ == '__main__':
     parser.add_argument('--load_steps', type=int, default=0, help='if value is provided will load <load_steps> steps')
     args = parser.parse_args()
 
-    hparams = {'ret_fnames': True, 'load_T': args.load_steps,'action_mismatch': 3, 'state_mismatch': 3, 'splits':[0.8, 0.1], 'same_cam_across_sub_batch':True}
+    hparams = {'ret_fnames': True, 'load_T': args.load_steps,'action_mismatch': 3, 'state_mismatch': 3, 'splits':[0.8, 0.1, 0.1], 'same_cam_across_sub_batch':False}
     loader = AnnotationBenchmarkDataset(args.batch_size, args.path, hparams=hparams)
     print('modes are', loader.modes)
 

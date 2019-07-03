@@ -61,6 +61,7 @@ class RoboNetDataset(BaseVideoDataset):
             assert len(files_per_source) == len(self.modes), "files should be split into {} sets (it's okay if sets are empty)".format(len(self.modes))
             for m, fps in zip(mode_sources, files_per_source):
                 if len(fps):
+                    self._random_generator['base'].shuffle(fps)
                     m.append((fps, metadata))                
 
         self._data_loaders = {}
@@ -79,7 +80,7 @@ class RoboNetDataset(BaseVideoDataset):
         return n_train_ex
 
     def _split_files(self, metadata):
-        return split_train_val_test(metadata, self._hparams.splits)
+        return split_train_val_test(metadata, self._hparams.splits, self._random_generator['base'])
 
     def _get(self, key, mode):
         return self._data_loaders[mode][key]
