@@ -28,7 +28,8 @@ class AnnotationBenchmarkDataset(RoboNetDataset):
         
         if self._hparams.train_ex_per_source != [-1]:
             train_files, val_files, test_files = split_train_val_test(metadata, train_ex=self._hparams.train_ex_per_source[source_number], rng=self._random_generator['base'])
-        train_files, val_files, test_files = split_train_val_test(non_annotated_metadata, splits=self._hparams.splits, rng=self._random_generator['base'])
+        else:
+            train_files, val_files, test_files = split_train_val_test(non_annotated_metadata, splits=self._hparams.splits, rng=self._random_generator['base'])
         
         all_annotated = metadata[metadata['contains_annotation'] == True]
         robot_files = [all_annotated[all_annotated['robot'] == r].files for r in self._annotated_robots]
