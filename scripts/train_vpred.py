@@ -41,7 +41,7 @@ if __name__ == '__main__':
     parser.add_argument('--no_resume', action='store_true', help='prevents ray from resuming (or restarting trials which crashed)')
     parser.add_argument('--temp_dir', default=None, type=str, help="ray will log to this temp dir (instead /tmp/ray)")
 
-    parser.add_argument('--batch_size', type=int, nargs='+', default=[], help='batch size for model training (if list will grid search)')
+    parser.add_argument('--batch_size', type=int, nargs='+', required=True, help='batch size for model training (if list will grid search)')
     parser.add_argument('--max_steps', type=int, nargs='+', default=[300000], help="maximum number of iterations to train for (if list will grid search)")
     parser.add_argument('--train_frac', type=float, nargs='+', default=[0.9], help='fraction of data to use as training set (if list will grid search)')
     parser.add_argument('--val_frac', type=float, nargs='+', default=[0.05], help='fraction of data to use as validation set (if list will grid search)')
