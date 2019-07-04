@@ -144,6 +144,9 @@ class VPredTrainable(Trainable):
         fetches['metric/step_time'] = time.time() - start
         
         if itr % self._hparams.image_summary_freq == 0 or itr % self._hparams.scalar_summary_freq == 0:
+            img_summary_get_ops = {'real_images':self._real_images,
+                                   'pred_frames':self._tensor_metrics['pred_frames'],
+                                   }
             if self._real_annotations is not None:
                 img_summary_get_ops.update({'real_annotation':self._real_annotations,
                                             'pred_distrib':self._tensor_metrics['pred_distrib']})
@@ -152,9 +155,6 @@ class VPredTrainable(Trainable):
                 annotation_modes = []
         
         if itr % self._hparams.image_summary_freq == 0:
-            img_summary_get_ops = {'real_images':self._real_images,
-                                   'pred_frames':self._tensor_metrics['pred_frames'],
-                                   }
             if 'pred_targets' in self._tensor_metrics:  # used for embedding model
                 img_summary_get_ops['pred_targets'] = self._tensor_metrics['pred_targets']
                 img_summary_get_ops['inference_images'] = self._tensor_metrics['inference_images']
