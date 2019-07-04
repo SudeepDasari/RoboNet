@@ -54,6 +54,7 @@ if __name__ == '__main__':
 
     dataset_hparams = json_try_load(args.experiment_dir + '/dataset_hparams.json')
     model_hparams = json_try_load(args.experiment_dir + '/model_hparams.json')
+    search_hparams = json_try_load(args.experiment_dir + '/search_hparams.json')
 
     if 'batch_size' in dataset_hparams and args.batch_size:
         raise ValueError
@@ -80,6 +81,18 @@ if __name__ == '__main__':
     
     if 'robot_set' in dataset_hparams:
         config['robot_set'] = dataset_hparams.pop('robot_set')
+    
+    for k, v in search_hparams.items():
+        dict_name, key = k.split('/')
+        search_params, search_type = v
+        assert search_type == 'grid_search', "only grid search is supported at the moment"
+
+        if dict_name == 'dataset_hparams':
+            dataset_hparams[key] =  tune.grid_search(search_params)
+        elif dict_name == 'model_hparams':
+            model_hparams[key] = tune.grid_search(search_params)
+        else:
+            raise ValueError
 
     if not args.name:
         args.name = "{}_video_prediction_training".format(os.getlogin())
