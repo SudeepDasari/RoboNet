@@ -142,7 +142,7 @@ class VPredTrainable(Trainable):
         start = time.time()
         train_loss = self.sess.run([loss, train_op], feed_dict=self._tensor_multiplexer.get_feed_dict('train'))[0]
         fetches['metric/step_time'] = time.time() - start
-        
+       # import pdb; pdb.set_trace()        
         if itr % self._hparams.image_summary_freq == 0 or itr % self._hparams.scalar_summary_freq == 0:
             img_summary_get_ops = {'real_images':self._real_images,
                                    'pred_frames':self._tensor_metrics['pred_frames'],

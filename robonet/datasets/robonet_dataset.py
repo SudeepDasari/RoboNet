@@ -74,7 +74,11 @@ class RoboNetDataset(BaseVideoDataset):
                 
                 gen_func = self._wrap_generator(mode_source_files, mode_source_metadata, rng, name)
                 dataset = tf.data.Dataset.from_generator(gen_func, output_format)
-                dataset = dataset.map(self._get_dict).prefetch(self._hparams.buffer_size)
+                dataset = dataset.map(self._get_dict)
+                if name == self.primary_mode:
+                    dataset = dataset.prefetch(self._hparams.buffer_size)
+                else:
+                    dataset = dataset.prefetch(1)
                 self._data_loaders[name] = dataset.make_one_shot_iterator().get_next()
 
         return n_train_ex

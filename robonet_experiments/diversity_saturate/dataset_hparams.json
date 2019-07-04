@@ -1,6 +1,6 @@
 {
     "dataset": "AnnotatedRoboNet",
-    "buffer_size":256,
+    "buffer_size":1,
     "load_T": 15,
     "target_adim": 5,
     "action_mismatch": 1,
