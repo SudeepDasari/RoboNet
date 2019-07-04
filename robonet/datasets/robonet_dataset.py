@@ -247,7 +247,7 @@ class RoboNetDataset(BaseVideoDataset):
         img_pl = tf.placeholder(tf.uint8, shape=[self.batch_size, self._hparams.load_T, ncam, height, width, 3])
         self._img_tensor = tf.cast(img_pl, tf.float32) / 255.0
         if self._hparams.color_augmentation:
-            self._img_tensor = color_augment(img_pl, self._hparams.color_augmentation)
+            self._img_tensor = color_augment(self._img_tensor, self._hparams.color_augmentation)
         
         pl_dict['images'] = img_pl
         pl_dict['actions'] = tf.placeholder(tf.float32, shape=[self.batch_size, self._hparams.load_T - 1, self._hparams.target_adim])
