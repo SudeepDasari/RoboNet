@@ -1,7 +1,7 @@
 {
     "model": "deterministic",
     "graph_type": "deterministic_graph",
-    "lr": 0.001,
+    "lr": 0.0001,
     "end_lr": 0.0,
     "decay_steps": [200000, 300000],
     "beta1": 0.9,
@@ -33,6 +33,5 @@
     "c_dna_kernel_size": [5, 5],              
     "schedule_sampling": "inverse_sigmoid",
     "schedule_sampling_k": 900.0,
-    "schedule_sampling_steps": [0, 100000],
-    "encoder": "one_step"
+    "schedule_sampling_steps": [0, 100000]
 }

@@ -63,7 +63,7 @@ class DeterministicWrapper(BaseGraph):
             'e_dim': None,  # gets populated inside in deterministic_embedding_generator.py
             'sub_batch_size': None,   # gets poplated from dataset_hparam
             'batch_size': None,      # gets poplated from dataset_hparam
-            'encoder': 'one_step',
+            'encoder': None,
             'stochastic': False,
 
             # params below control size of model

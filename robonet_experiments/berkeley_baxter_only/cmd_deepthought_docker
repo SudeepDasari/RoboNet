@@ -1,0 +1,1 @@
+ypython scripts/train_vpred.py --input_dir /parent/nfs/kun1/users/febert/data/vmpc_data/robonet_valdata/berkeley_baxter_cloth/cloth_hdf5 --experiment_dir robonet_experiments/berkeley_baxter_only --no_resume --local_mode  --name berkeley_baxter_only

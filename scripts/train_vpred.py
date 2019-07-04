@@ -28,6 +28,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--train_class', type=str, default='VPredTrainable', help='trainable type (specify for customizable train loop behavior)')
     parser.add_argument("--input_dir", type=str, required=True, help="directory containing video prediction data")
+    parser.add_argument("--batchmix_basedata", type=str, default='', help="when finetuning via")
     parser.add_argument("--upload_dir", type=str, default=None, help="if provided ray will sync files to given bucket dir")
     parser.add_argument('--restore_dir', type=str, default='', help='ray will restore checkpoint and tensorboard events from given directory')
     parser.add_argument('--experiment_dir', type=str, required=True, help='directory containing model and dataset hparams')
@@ -59,6 +60,8 @@ if __name__ == '__main__':
         raise ValueError
     elif 'batch_size' in dataset_hparams:
         args.batch_size = dataset_hparams.pop('batch_size')
+
+
     
     config = {'dataset_hparams': dataset_hparams,
               'model_hparams': model_hparams,
@@ -68,6 +71,7 @@ if __name__ == '__main__':
               'val_fraction': tune.grid_search(args.val_frac),
               'max_steps': tune.grid_search(args.max_steps),
               'data_directory': args.input_dir,
+              'batchmix_basedata': args.batchmix_basedata,
               'image_summary_freq': args.image_summary_freq,
               'scalar_summary_freq': args.scalar_summary_freq,
               'robot': args.robot,
@@ -92,7 +96,8 @@ if __name__ == '__main__':
                 config=config,
                 resources_per_trial= {"cpu": 1, "gpu": 1},
                 checkpoint_freq=args.save_freq,
-                upload_dir=args.upload_dir
+                upload_dir=args.upload_dir,
+                local_dir=os.environ.get('RAY_RESULTS', None)
     )
     
     redis_address = None
@@ -103,8 +108,8 @@ if __name__ == '__main__':
     max_failures = 3
     if args.cluster:
         max_failures = 20
-    
-    trials = tune.run(exp, queue_trials=True, resume=not args.no_resume, 
+
+    trials = tune.run(exp, queue_trials=True, resume=not args.no_resume,
                     checkpoint_at_end=True, max_failures=max_failures,
-                    local_dir=os.environ.get('RAY_RESULTS', None))
+                    )
     exit(0)
