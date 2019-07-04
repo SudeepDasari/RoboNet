@@ -71,7 +71,7 @@ if __name__ == '__main__':
 
     tensors = [loader[x, args.mode] for x in ['images', 'states', 'actions', 'annotations', 'f_names']]
     s = tf.Session()
-    out_tensors = s.run(tensors)
+    out_tensors = s.run(tensors, feed_dict=loader.build_feed_dict(args.mode))
     
     import imageio
     writer = imageio.get_writer('test_frames.gif')

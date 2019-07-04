@@ -44,13 +44,16 @@ class MultiplexedTensors:
         return self._tensor_dict
     
     def get_feed_dict(self, mode):
+        dataset_feed = loader.build_feed_dict(mode)
         if isinstance(mode, int):
             assert 0 <= mode < len(self._mode_ind.keys()), "mode_index must be in range 0 to len(modes) - 1"
-            return {self._train_cond: mode}
+            dataset_feed[self._train_cond] = mode
+            return dataset_feed
         
         assert isinstance(mode, str) 
         assert mode in self._mode_ind, "{} not supported! Modes are {}".foramt(mode, self._mode_ind.keys())
-        return {self._train_cond: self._mode_ind[mode]}
+        dataset_feed[self._train_cond] = self._mode_ind[mode]
+        return dataset_feed
 
     @property
     def modes(self):
