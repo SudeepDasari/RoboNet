@@ -16,8 +16,7 @@ def json_try_load(fname):
     try:
         return json.load(open(fname, 'r'))
     except FileNotFoundError:
-        ValueError('warning, no file {} found!'.format(fname))
-        # return {}
+        return {}
 
 
 def trial_str_creator(trial):
