@@ -260,19 +260,26 @@ class RoboNetDataset(BaseVideoDataset):
         return pl_dict
 
     def build_feed_dict(self, mode):
-        if mode == self.primary_mode:
-            return {}
-    
         fetch = {}
-        args = next(self._mode_generators[mode])
-        if self._hparams.ret_fnames and self._hparams.load_annotations:
-            images, actions, states, annotations, f_names = args
-        elif self._hparams.ret_fnames:
-            images, actions, states, f_names = args
-        elif self._hparams.load_annotations:
-            images, actions, states, annotations = args
+        if mode == self.primary_mode:
+            # set placeholders to null
+            images = np.zeros(self._place_holder_dict['images'].get_shape().as_list(), dtype=np.uint8)
+            actions = np.zeros(self._place_holder_dict['actions'].get_shape().as_list(), dtype=np.float32)
+            states = np.zeros(self._place_holder_dict['states'].get_shape().as_list(), dtype=np.float32)
+            if self._hparams.load_annotations:
+                annotations = np.zeros(self._place_holder_dict['annotations'].get_shape().as_list(), dtype=np.float32)
+            if self._hparams.ret_fnames:
+                f_names = ['']
         else:
-            images, actions, states = args
+            args = next(self._mode_generators[mode])
+            if self._hparams.ret_fnames and self._hparams.load_annotations:
+                images, actions, states, annotations, f_names = args
+            elif self._hparams.ret_fnames:
+                images, actions, states, f_names = args
+            elif self._hparams.load_annotations:
+                images, actions, states, annotations = args
+            else:
+                images, actions, states = args
         
         fetch[self._place_holder_dict['images']] = images
         fetch[self._place_holder_dict['actions']] = actions
