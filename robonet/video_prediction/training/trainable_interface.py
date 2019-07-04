@@ -190,6 +190,10 @@ class VPredTrainable(Trainable):
                     if 'pixel' in key and '_annotated' not in name:
                         # doesn't log pixel metrics for trajs which don't have pixels
                         continue
+                    elif 'pixel' not in key and '_annotated' in name:
+                        # don't log other metrics (like l1_loss) for debug modes
+                        continue
+
                     fetches['metric/{}/{}'.format(key, name)] = value
 
         fetches['done'] = itr >= self._hparams.max_steps
