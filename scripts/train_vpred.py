@@ -55,6 +55,7 @@ if __name__ == '__main__':
     dataset_hparams = json_try_load(args.experiment_dir + '/dataset_hparams.json')
     model_hparams = json_try_load(args.experiment_dir + '/model_hparams.json')
     search_hparams = json_try_load(args.experiment_dir + '/search_hparams.json')
+    config_hparams = json_try_load(args.experiment_dir + '/trainable_config.json')
 
     if 'batch_size' in dataset_hparams and args.batch_size:
         raise ValueError
@@ -77,6 +78,9 @@ if __name__ == '__main__':
               'action_primitive': args.action_primitive,
               'balance_across_robots': args.balance_robots,
               'filter_adim': args.filter_adim}
+    train_class_name = config_hparams.pop('trainable_class', args.train_class)
+    for k, v in config_hparams.items():
+        config[k] = v
         
     assert not isinstance(dataset_hparams.get('held_out_robot', ''), (list, tuple)), "use search_hparams functionality now!"
     
@@ -102,7 +106,7 @@ if __name__ == '__main__':
 
     exp = tune.Experiment(
                 name=args.name,
-                run=get_trainable(args.train_class),
+                run=get_trainable(train_class_name),
                 trial_name_creator=tune.function(trial_str_creator),
                 loggers=[GIFLogger],
                 config=config,

@@ -1,5 +1,6 @@
 from robonet.video_prediction.training.trainable_interface import VPredTrainable
-import pdb
+import numpy as np
+
 
 class BalancedCamFilter(VPredTrainable):
 
@@ -42,3 +43,18 @@ class RobotSetFilter(VPredTrainable):
                     print('using robot', m['robot'].frame.unique().tolist())
                     new_metadata_list.append(m)
         return new_metadata_list
+
+
+class RobotObjectFilter(VPredTrainable):
+    def _default_hparams(self):
+        params = super()._default_hparams()
+        params.add_hparam('target_robot', '')
+        params.add_hparam('removed_object', '')
+        return params
+    
+    def _filter_metadata(self, metadata):
+        obj_exclude = metadata['object_classes'].frame.apply(lambda x: self._hparams.removed_object not in x)
+        not_robot_applied_to = metadata['robot'] != self._hparams.target_robot
+        x = metadata[np.logical_or(obj_exclude, not_robot_applied_to)]
+        return x
+        

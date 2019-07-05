@@ -10,6 +10,9 @@ def get_trainable(class_name):
     if class_name == 'RobotSetFilter':
         from .data_filter import RobotSetFilter
         return RobotSetFilter
+    if class_name == 'RobotObjectFilter':
+        from .data_filter import RobotObjectFilter
+        return RobotObjectFilter
     if class_name == 'BatchmixFinetuning':
         from .finetuning_trainable_interface import BatchmixingVPredTrainable
         return BatchmixingVPredTrainable
