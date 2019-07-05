@@ -74,6 +74,7 @@ class VPredTrainable(Trainable):
             'val_fraction': 0.05,
             'max_to_keep': 3,
             'robot': '',
+            'held_out_robot': '',
             'action_primitive': '',
             'filter_adim': 0,
             'max_steps': 300000,
@@ -86,6 +87,8 @@ class VPredTrainable(Trainable):
         filters metadata based on configuration file
             - overwrite/modify for more expressive data loading
         """
+        if self._hparams.held_out_robot:
+            metadata = metadata[metadata['robot'] != self._hparams.held_out_robot]
         if self._hparams.action_primitive:
             metadata = metadata[metadata['primitives'] == self._hparams.action_primitive]
         if self._hparams.filter_adim:

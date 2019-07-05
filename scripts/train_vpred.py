@@ -75,8 +75,7 @@ if __name__ == '__main__':
               'balance_across_robots': args.balance_robots,
               'filter_adim': args.filter_adim}
         
-    if isinstance(dataset_hparams.get('held_out_robot', ''), (list, tuple)):
-        dataset_hparams['held_out_robot'] = tune.grid_search(dataset_hparams['held_out_robot'])
+    assert not isinstance(dataset_hparams.get('held_out_robot', ''), (list, tuple)), "use search_hparams functionality now!"
     
     if 'robot_set' in dataset_hparams:
         config['robot_set'] = dataset_hparams.pop('robot_set')
@@ -90,6 +89,8 @@ if __name__ == '__main__':
             dataset_hparams[key] =  tune.grid_search(search_params)
         elif dict_name == 'model_hparams':
             model_hparams[key] = tune.grid_search(search_params)
+        elif dict_name == 'config':
+            config[key] = tune.grid_search(search_params)
         else:
             raise ValueError
 
