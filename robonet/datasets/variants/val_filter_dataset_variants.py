@@ -1,5 +1,6 @@
 from robonet.datasets.robonet_dataset import RoboNetDataset
 from tensorflow.contrib.training.python.training.hparam import HParams
+from robonet.datasets.variants.annotation_benchmark_dataset import AnnotationBenchmarkDataset
 import pdb
 
 

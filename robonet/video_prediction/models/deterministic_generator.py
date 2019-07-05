@@ -10,6 +10,9 @@ import logging
 from collections import OrderedDict
 from robonet.video_prediction import losses
 from robonet.video_prediction import metrics
+import pdb
+
+from robonet.video_prediction.models.deterministc_embedding_utils import onestep_encoder_fn, average_and_repeat, split_model_inference
 
 
 def loss_default_hparams(graph_class):
@@ -56,12 +59,24 @@ def vpred_generator(num_gpus, graph_type, tpu_mode, model_inputs, model_targets,
     # if annotations are present construct 'pixel flow error metric'
     if 'annotations' in model_inputs:
         inputs['pix_distribs'] = tf.transpose(model_inputs['annotations'], [1, 0, 2, 3, 4])
-        targets['pix_distribs'] =  tf.transpose(model_targets['annotations'][:, hparams.context_frames:], [1, 0, 2, 3, 4])
+        targets['pix_distribs'] = tf.transpose(model_targets['annotations'][:, hparams.context_frames:], [1, 0, 2, 3, 4])
+
+    if hparams.encoder == 'one_step':
+        tlen = inputs['images'].get_shape().as_list()[0]
+        inputs_tr_inf, targets_tr_inf = split_model_inference(inputs, targets, hparams)
+        outputs_enc = onestep_encoder_fn(inputs_tr_inf['inference'], hparams)
+        hparams.e_dim = outputs_enc.get_shape().as_list()[2]
+        outputs_enc = average_and_repeat(outputs_enc, hparams, tlen)
+        inputs = inputs_tr_inf['train']
+        targets = targets_tr_inf['train']
+    else:
+        outputs_enc = None
 
     # build the graph
     model_graph = graph_class()
+
     if num_gpus == 1:
-        outputs = model_graph.build_graph(inputs, hparams)
+        outputs = model_graph.build_graph(inputs, hparams, outputs_enc=outputs_enc)
     else:
         # TODO: add multi-gpu evaluation support
         raise NotImplementedError
@@ -83,9 +98,15 @@ def vpred_generator(num_gpus, graph_type, tpu_mode, model_inputs, model_targets,
         
         gen_images = outputs.get('gen_images_enc', outputs['gen_images'])
         target_images = targets['images']
-        
-        scalar_summaries, tensor_summaries = {'learning_rate': lr}, {'pred_frames': pred_frames}
-        
+
+        scalar_summaries = {'learning_rate': lr}
+        tensor_summaries = {'pred_frames': pred_frames}
+
+        if hparams.encoder == 'one_step':
+            tensor_summaries['inference_images'] = inputs_tr_inf['inference']['images']
+            tensor_summaries['pred_targets'] = target_images
+            tensor_summaries['pred_target_dists'] = targets_tr_inf['train']['pix_distribs']
+
         if 'annotations' in model_inputs:
             tensor_summaries['pred_distrib'] = tf.transpose(outputs['gen_pix_distribs'], [1, 0, 2, 3, 4])
             expected_dist = metrics.expected_pixel_distance(targets['pix_distribs'], outputs['gen_pix_distribs'])

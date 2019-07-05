@@ -1,6 +1,6 @@
 {
     "model": "deterministic",
-    "graph_type": "c_dna_flow",
+    "graph_type": "deterministic_graph",
     "lr": 0.001,
     "end_lr": 0.0,
     "decay_steps": [200000, 300000],
@@ -16,7 +16,7 @@
     "sequence_length": 15,
     "context_frames": 2,
     "use_states": false,
-    "ngf": 32,
+    "ngf": 64,
     "last_frames": 2,
     "num_transformed_images": 4,
     "prev_image_background": true,

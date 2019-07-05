@@ -1,0 +1,1 @@
+python scripts/train_vpred.py --input_dir /nfs/kun1/users/sudeep/hdf5_new_fields --experiment_dir robonet_experiments/all_robots_coloraug --no_resume --local_mode  --train_class RobotSetFilter --name all_robots_coloraug/annotation  --balance_robots --train_class RobotSetFilterr

@@ -1,5 +1,4 @@
 from .util.metadata_helper import load_metadata
-from .util.tensor_multiplexer import multiplex_tensors, MultiplexedTensors
 
 
 def get_dataset_class(name):

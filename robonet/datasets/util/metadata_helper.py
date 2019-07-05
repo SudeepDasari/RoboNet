@@ -168,7 +168,7 @@ def load_metadata(files):
         base_path = ''
     else:
         files = base_path = os.path.expanduser(base_path)
-    
+
     return MetaDataContainer(base_path, get_metadata_frame(files))
 
 
