@@ -16,8 +16,7 @@ def json_try_load(fname):
     try:
         return json.load(open(fname, 'r'))
     except FileNotFoundError:
-        ValueError('warning, no file {} found!'.format(fname))
-        # return {}
+        return {}
 
 
 def trial_str_creator(trial):
@@ -47,7 +46,7 @@ if __name__ == '__main__':
     parser.add_argument('--train_frac', type=float, nargs='+', default=[0.9], help='fraction of data to use as training set (if list will grid search)')
     parser.add_argument('--val_frac', type=float, nargs='+', default=[0.05], help='fraction of data to use as validation set (if list will grid search)')
 
-    parser.add_argument('--robot', type=str, default='', help="robot data to train on (if only one robot is desired)")
+    parser.add_argument('--robot', type=str, default=[''], nargs='+', help="robot data to train on - set to 'all_balanced' for balanced_robots behavior (if list will grid search)")
     parser.add_argument('--action_primitive', type=str, default='', help="if flag is supplied only trajectories with metadata['primitive']==action_primitive will be considered")
     parser.add_argument('--filter_adim', type=int, default=0, help="if flag is supplied only trajectories with adim=filter_adim will be trained on")
     parser.add_argument('--balance_robots', action='store_true', help='if flag is supplied batches will be balanced across robots')
@@ -55,6 +54,7 @@ if __name__ == '__main__':
 
     dataset_hparams = json_try_load(args.experiment_dir + '/dataset_hparams.json')
     model_hparams = json_try_load(args.experiment_dir + '/model_hparams.json')
+    search_hparams = json_try_load(args.experiment_dir + '/search_hparams.json')
 
     if 'batch_size' in dataset_hparams and args.batch_size:
         raise ValueError
@@ -74,7 +74,7 @@ if __name__ == '__main__':
               'batchmix_basedata': args.batchmix_basedata,
               'image_summary_freq': args.image_summary_freq,
               'scalar_summary_freq': args.scalar_summary_freq,
-              'robot': args.robot,
+              'robot': tune.grid_search(args.robot),
               'action_primitive': args.action_primitive,
               'balance_across_robots': args.balance_robots,
               'filter_adim': args.filter_adim}
@@ -84,6 +84,18 @@ if __name__ == '__main__':
     
     if 'robot_set' in dataset_hparams:
         config['robot_set'] = dataset_hparams.pop('robot_set')
+    
+    for k, v in search_hparams.items():
+        dict_name, key = k.split('/')
+        search_params, search_type = v
+        assert search_type == 'grid_search', "only grid search is supported at the moment"
+
+        if dict_name == 'dataset_hparams':
+            dataset_hparams[key] =  tune.grid_search(search_params)
+        elif dict_name == 'model_hparams':
+            model_hparams[key] = tune.grid_search(search_params)
+        else:
+            raise ValueError
 
     if not args.name:
         args.name = "{}_video_prediction_training".format(os.getlogin())

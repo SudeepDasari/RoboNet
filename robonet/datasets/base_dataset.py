@@ -92,3 +92,9 @@ class BaseVideoDataset(object):
     def modes(self):
         return ['train', 'val', 'test']
 
+    @property
+    def primary_mode(self):
+        return 'train'
+
+    def build_feed_dict(self, mode):
+        return {}

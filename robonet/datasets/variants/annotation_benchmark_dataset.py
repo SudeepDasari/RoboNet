@@ -20,19 +20,23 @@ class AnnotationBenchmarkDataset(RoboNetDataset):
         parent_hparams.zero_if_missing_annotation = True
         return parent_hparams
 
-    def _split_files(self, metadata):
+    def _split_files(self, source_number, metadata):
         assert self._hparams.load_annotations, "mode requires annotation loading"
         assert self._hparams.zero_if_missing_annotation, "mode requires some files to not be annotated"
 
         non_annotated_metadata = metadata[metadata['contains_annotation'] != True]
-        train_files, val_files, test_files = split_train_val_test(non_annotated_metadata, self._hparams.splits)
+        
+        if self._hparams.train_ex_per_source != [-1]:
+            train_files, val_files, test_files = split_train_val_test(metadata, train_ex=self._hparams.train_ex_per_source[source_number], rng=self._random_generator['base'])
+        else:
+            train_files, val_files, test_files = split_train_val_test(non_annotated_metadata, splits=self._hparams.splits, rng=self._random_generator['base'])
         
         all_annotated = metadata[metadata['contains_annotation'] == True]
         robot_files = [all_annotated[all_annotated['robot'] == r].files for r in self._annotated_robots]
 
         if len(self._annotated_robots) == 1:
             return [train_files, val_files, test_files] + robot_files
-        return [train_files, val_files, test_files] + [all_annotated_files] + robot_files
+        return [train_files, val_files, test_files] + [all_annotated.files] + robot_files
     
     @property
     def modes(self):
@@ -61,13 +65,13 @@ if __name__ == '__main__':
     parser.add_argument('--load_steps', type=int, default=0, help='if value is provided will load <load_steps> steps')
     args = parser.parse_args()
 
-    hparams = {'ret_fnames': True, 'load_T': args.load_steps,'action_mismatch': 3, 'state_mismatch': 3, 'splits':[0.8, 0.1], 'same_cam_across_sub_batch':True}
+    hparams = {'ret_fnames': True, 'load_T': args.load_steps,'action_mismatch': 3, 'state_mismatch': 3, 'splits':[0.8, 0.1, 0.1], 'same_cam_across_sub_batch':False}
     loader = AnnotationBenchmarkDataset(args.batch_size, args.path, hparams=hparams)
     print('modes are', loader.modes)
 
     tensors = [loader[x, args.mode] for x in ['images', 'states', 'actions', 'annotations', 'f_names']]
     s = tf.Session()
-    out_tensors = s.run(tensors)
+    out_tensors = s.run(tensors, feed_dict=loader.build_feed_dict(args.mode))
     
     import imageio
     writer = imageio.get_writer('test_frames.gif')

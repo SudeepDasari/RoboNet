@@ -32,7 +32,7 @@ class RoboNetDataset(BaseVideoDataset):
         assert self._batch_size % self._hparams.sub_batch_size == 0, "sub batches should evenly divide batch_size!"
         # assert np.isclose(sum(self._hparams.splits), 1) and all([0 <= i <= 1 for i in self._hparams.splits]), "splits is invalid"
         assert self._hparams.load_T >=0, "load_T should be non-negative!"
-        
+
         # set output format
         output_format = [tf.uint8, tf.float32, tf.float32]        
         if self._hparams.load_annotations:
@@ -56,14 +56,17 @@ class RoboNetDataset(BaseVideoDataset):
 
         n_train_ex = 0
         mode_sources = [[] for _ in range(len(self.modes))]
-        for metadata in self._metadata:
-            files_per_source = self._split_files(metadata)
+        for m_ind, metadata in enumerate(self._metadata):
+            files_per_source = self._split_files(m_ind, metadata)
             assert len(files_per_source) == len(self.modes), "files should be split into {} sets (it's okay if sets are empty)".format(len(self.modes))
             for m, fps in zip(mode_sources, files_per_source):
                 if len(fps):
+                    self._random_generator['base'].shuffle(fps)
                     m.append((fps, metadata))                
 
-        self._data_loaders = {}
+        self._place_holder_dict = self._get_placeholders()
+        self._mode_generators = {}
+
         for name, m in zip(self.modes, mode_sources):
             if m:
                 rng = self._random_generator[name]
@@ -72,20 +75,32 @@ class RoboNetDataset(BaseVideoDataset):
                     n_train_ex = sum([len(f) for f in mode_source_files])
                 
                 gen_func = self._wrap_generator(mode_source_files, mode_source_metadata, rng, name)
-                dataset = tf.data.Dataset.from_generator(gen_func, output_format)
-                dataset = dataset.map(self._get_dict).prefetch(self._hparams.buffer_size)
-                self._data_loaders[name] = dataset.make_one_shot_iterator().get_next()
-
+                if name == self.primary_mode:
+                    dataset = tf.data.Dataset.from_generator(gen_func, output_format)
+                    dataset = dataset.map(self._get_dict)
+                    dataset = dataset.prefetch(self._hparams.buffer_size)
+                    self._data_loader_dict = dataset.make_one_shot_iterator().get_next()
+                else:
+                    self._mode_generators[name] = gen_func()
+                    
         return n_train_ex
 
-    def _split_files(self, metadata):
-        return split_train_val_test(metadata, self._hparams.splits)
+    def _split_files(self, source_number, metadata):
+        if self._hparams.train_ex_per_source != [-1]:
+            return split_train_val_test(metadata, train_ex=self._hparams.train_ex_per_source[source_number], rng=self._random_generator['base'])
+        return split_train_val_test(metadata, splits=self._hparams.splits, rng=self._random_generator['base'])
 
     def _get(self, key, mode):
-        return self._data_loaders[mode][key]
+        if mode == self.primary_mode:
+            return self._data_loader_dict[key]
+        
+        if key == 'images':
+            return self._img_tensor
+        
+        return self._place_holder_dict[key]
     
     def __contains__(self, item):
-        return any([item in self._data_loaders.get(m, {}) for m in self.modes])
+        return item in self._place_holder_dict
 
     @staticmethod
     def _get_default_hparams():
@@ -96,12 +111,13 @@ class RoboNetDataset(BaseVideoDataset):
             'splits': (0.9, 0.05, 0.05),             # train, val, test
             'num_epochs': None,                      # maximum number of epochs (None if iterate forever)
             'ret_fnames': False,                     # return file names of loaded hdf5 record
-            'buffer_size': 10,                       # examples to prefetch
+            'buffer_size': 100,                      # examples to prefetch
             'all_modes_max_workers': True,           # use multi-threaded workers regardless of the mode
             'load_random_cam': True,                 # load a random camera for each example
             'same_cam_across_sub_batch': False,      # same camera across sub_batches
             'pool_workers': 0,                       # number of workers for pool (if 0 uses batch_size workers)
-            'color_augmentation':False
+            'color_augmentation':0.0,                # std of color augmentation (set to 0 for no augmentations)
+            'train_ex_per_source': [-1]              # list of train_examples per source (set to [-1] to rely on splits only)
         }
         for k, v in default_loader_hparams().items():
             default_dict[k] = v
@@ -207,7 +223,7 @@ class RoboNetDataset(BaseVideoDataset):
 
         out_dict['images'] = tf.cast(shaped_images, tf.float32) / 255.0
         if self._hparams.color_augmentation:
-            out_dict['images'] = color_augment(out_dict['images'])
+            out_dict['images'] = color_augment(out_dict['images'], self._hparams.color_augmentation)
 
         out_dict['actions'] = tf.reshape(actions, [self.batch_size, self._hparams.load_T - 1, self._hparams.target_adim])
         out_dict['states'] = tf.reshape(states, [self.batch_size, self._hparams.load_T, self._hparams.target_sdim])
@@ -218,7 +234,61 @@ class RoboNetDataset(BaseVideoDataset):
             out_dict['f_names'] = f_names
         
         return out_dict
+    
+    def _get_placeholders(self):
+        height, width = self._hparams.img_size
+        if self._hparams.load_random_cam:
+            ncam = 1
+        else:
+            ncam = len(self._hparams.cams_to_load)
+        
+        pl_dict = {}
+        
+        img_pl = tf.placeholder(tf.uint8, shape=[self.batch_size, self._hparams.load_T, ncam, height, width, 3])
+        self._img_tensor = tf.cast(img_pl, tf.float32) / 255.0
+        if self._hparams.color_augmentation:
+            self._img_tensor = color_augment(self._img_tensor, self._hparams.color_augmentation)
+        
+        pl_dict['images'] = img_pl
+        pl_dict['actions'] = tf.placeholder(tf.float32, shape=[self.batch_size, self._hparams.load_T - 1, self._hparams.target_adim])
+        pl_dict['states'] = tf.placeholder(tf.float32, [self.batch_size, self._hparams.load_T, self._hparams.target_sdim])
 
+        if self._hparams.load_annotations:
+            pl_dict['annotations'] = tf.placeholder(tf.float32, [self._batch_size, self._hparams.load_T, ncam, height, width, 2])
+        if self._hparams.ret_fnames:
+            pl_dict['f_names'] = tf.placeholder(tf.string, shape=[None])
+        return pl_dict
+
+    def build_feed_dict(self, mode):
+        fetch = {}
+        if mode == self.primary_mode:
+            # set placeholders to null
+            images = np.zeros(self._place_holder_dict['images'].get_shape().as_list(), dtype=np.uint8)
+            actions = np.zeros(self._place_holder_dict['actions'].get_shape().as_list(), dtype=np.float32)
+            states = np.zeros(self._place_holder_dict['states'].get_shape().as_list(), dtype=np.float32)
+            if self._hparams.load_annotations:
+                annotations = np.zeros(self._place_holder_dict['annotations'].get_shape().as_list(), dtype=np.float32)
+            if self._hparams.ret_fnames:
+                f_names = ['']
+        else:
+            args = next(self._mode_generators[mode])
+            if self._hparams.ret_fnames and self._hparams.load_annotations:
+                images, actions, states, annotations, f_names = args
+            elif self._hparams.ret_fnames:
+                images, actions, states, f_names = args
+            elif self._hparams.load_annotations:
+                images, actions, states, annotations = args
+            else:
+                images, actions, states = args
+        
+        fetch[self._place_holder_dict['images']] = images
+        fetch[self._place_holder_dict['actions']] = actions
+        fetch[self._place_holder_dict['states']] = states
+        if self._hparams.ret_fnames:
+            fetch[self._place_holder_dict['f_names']] = f_names
+        if self._hparams.load_annotations:
+            fetch[self._place_holder_dict['annotations']] = annotations
+        return fetch
 
 def _timing_test(N, loader):
     import time
@@ -234,7 +304,7 @@ def _timing_test(N, loader):
         for i in range(N):
             
             start = time.time()
-            s.run(mode_tensors[m])
+            s.run(mode_tensors[m], feed_dict=loader.build_feed_dict(m))
             run_time = time.time() - start
             if m == 'train':
                 timings.append(run_time)
@@ -270,7 +340,7 @@ if __name__ == '__main__':
 
     tensors = [loader[x, args.mode] for x in ['images', 'states', 'actions', 'f_names']]
     s = tf.Session()
-    out_tensors = s.run(tensors)
+    out_tensors = s.run(tensors, feed_dict=loader.build_feed_dict(args.mode))
     
     import imageio
     writer = imageio.get_writer('test_frames.gif')

@@ -119,7 +119,7 @@ def vpred_generator(num_gpus, graph_type, tpu_mode, model_inputs, model_targets,
             if expected_dist.get_shape().as_list()[-1] > 1:
                 for o in range(1, expected_dist.get_shape().as_list()[-1]):
                     scalar_summaries['object{}_pixel_distance'.format(o)] = tf.reduce_mean(expected_dist[:, o])
-                    scalar_summaries['object{}_pixel_std'.format(o)] = tf.reduce_mean(var_dist[:, o])
+                    scalar_summaries['object{}_pixel_var'.format(o)] = tf.reduce_mean(var_dist[:, o])
     
         if 'ground_truth_sampling_mean' in outputs:
             scalar_summaries['ground_truth_sampling_mean'] = outputs['ground_truth_sampling_mean']

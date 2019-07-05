@@ -8,6 +8,7 @@ from tqdm import tqdm
 from multiprocessing import Pool, cpu_count
 import hashlib
 import io
+import random
 
 
 class MetaDataContainer:
@@ -32,6 +33,14 @@ class MetaDataContainer:
     def files(self):
         return ['{}/{}'.format(self._base_path, f) for f in self.frame.index]
     
+    def get_shuffled_files(self, rng):
+        files = ['{}/{}'.format(self._base_path, f) for f in self.frame.index]
+        if rng:
+            rng.shuffle(files)
+        else:
+            random.shuffle(files)
+        return files
+
     @property
     def base_path(self):
         return self._base_path

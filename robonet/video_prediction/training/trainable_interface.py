@@ -31,7 +31,7 @@ class VPredTrainable(Trainable):
         self.sess = tf.Session()
         self.sess.run(tf.global_variables_initializer())
         self.annotation_modes = None
-        
+
         if self._hparams.restore_dir:
             meta_file = glob.glob(self._hparams.restore_dir + '/*.meta')
             self._restore(meta_file[0])
@@ -98,15 +98,21 @@ class VPredTrainable(Trainable):
         if self._hparams.filter_adim:
             metadata = metadata[metadata['adim'] == self._hparams.filter_adim]
 
-        if self._hparams.balance_across_robots:
-            assert not self._hparams.robot, "can't balance across a single robot"
+        if self._hparams.balance_across_robots or self._hparams.robot == 'all_balanced':
+            assert not self._hparams.robot or self._hparams.robot == 'all_balanced', "can't balance across one robot!"
             unique_robots = metadata['robot'].frame.unique().tolist()
             all_metadata = metadata
             metadata = [all_metadata[all_metadata['robot'] == r] for r in unique_robots]
-            
-        if self._hparams.robot:
+        elif self._hparams.robot:
             metadata = metadata[metadata['robot'] == self._hparams.robot]
 
+        if 'train_ex_per_source' in self.dataset_hparams:
+            if not isinstance(self.dataset_hparams['train_ex_per_source'], list):
+                print('train_ex_per_source is not a list! Automatically broadcasting...')
+                if isinstance(metadata, list):
+                    self.dataset_hparams['train_ex_per_source'] = [self.dataset_hparams['train_ex_per_source'] for _ in range(len(metadata))]
+                else:
+                    self.dataset_hparams['train_ex_per_source'] = [self.dataset_hparams['train_ex_per_source']]
         return metadata
 
     def _get_input_targets(self, DatasetClass, metadata, dataset_hparams):
@@ -143,36 +149,27 @@ class VPredTrainable(Trainable):
         start = time.time()
         train_loss = self.sess.run([loss, train_op], feed_dict=self._tensor_multiplexer.get_feed_dict('train'))[0]
         fetches['metric/step_time'] = time.time() - start
-        run_first_time = False
-        
-        if itr % self._hparams.image_summary_freq == 0 or self.annotation_modes is None:
+       # import pdb; pdb.set_trace()
+        if itr % self._hparams.image_summary_freq == 0 or itr % self._hparams.scalar_summary_freq == 0 or self.annotation_modes is None:
             img_summary_get_ops = {'real_images':self._real_images,
                                    'pred_frames':self._tensor_metrics['pred_frames'],
                                    }
-            if 'pred_targets' in self._tensor_metrics:  # used for embedding model
-                img_summary_get_ops['pred_targets'] = self._tensor_metrics['pred_targets']
-                img_summary_get_ops['pred_target_dists'] = self._tensor_metrics['pred_target_dists']
-                img_summary_get_ops['inference_images'] = self._tensor_metrics['inference_images']
-            
             if self._real_annotations is not None:
                 img_summary_get_ops.update({'real_annotation':self._real_annotations,
                                             'pred_distrib':self._tensor_metrics['pred_distrib']})
                 self.annotation_modes = [m for m in self._tensor_multiplexer.modes if '_annotated' in m]
             else:
                 self.annotation_modes = []
+
+        if itr % self._hparams.image_summary_freq == 0:
+            if 'pred_targets' in self._tensor_metrics:  # used for embedding model
+                img_summary_get_ops['pred_targets'] = self._tensor_metrics['pred_targets']
+                img_summary_get_ops['pred_target_dists'] = self._tensor_metrics['pred_target_dists']
+                img_summary_get_ops['inference_images'] = self._tensor_metrics['inference_images']
             
             for name in ['train', 'val'] + self.annotation_modes:
                 fetch_mode = self._tensor_multiplexer.get_feed_dict(name)
                 fetched_npy = self.sess.run(img_summary_get_ops, feed_dict=fetch_mode)
-                real_img, pred_img = fetched_npy['real_images'], fetched_npy['pred_frames']
-
-                if 'pred_targets' in self._tensor_metrics:  # used for embedding model
-                    fetches['metric/image_summary/{}_all'.format(name)] = pad(fetched_npy['real_images'], self._hparams.pad_amount)
-                    # real_img_inf, real_img = split_model_inference(real_img, params=self.model_hparams)
-                    fetches['metric/image_summary/{}_inference'.format(name)] = pad(stbmajor(fetched_npy['inference_images']), self._hparams.pad_amount)
-                    fetches['metric/image_summary/{}'.format(name)] = pad_and_concat(stbmajor(fetched_npy['pred_targets']), fetched_npy['pred_frames'], self._hparams.pad_amount)
-                else:  # used for everything else:
-                    fetches['metric/image_summary/{}'.format(name)] = pad_and_concat(fetched_npy['real_images'], fetched_npy['pred_frames'], self._hparams.pad_amount)
 
                 if self._real_annotations is not None and '_annotated' in name:
                     if 'pred_targets' in self._tensor_metrics:  # used for embedding model
@@ -185,6 +182,15 @@ class VPredTrainable(Trainable):
                             dist_name = 'object{}'.format(o)
                         real_dist, pred_dist = [render_dist(x[:, :, :, :, o]) for x in dists]
                         fetches['metric/{}_pixel_warp/{}'.format(dist_name, name)] = pad_and_concat(real_dist, pred_dist, self._hparams.pad_amount)
+                else:
+                    real_img, pred_img = fetched_npy['real_images'], fetched_npy['pred_frames']
+                    if real_img.shape[0] == pred_img.shape[0]*2:  # if using different trajectories for inference and prediction
+                        fetches['metric/image_summary/{}_all'.format(name)] = pad(fetched_npy['real_images'], self._hparams.pad_amount)
+                        # real_img_inf, real_img = split_model_inference(real_img, params=self.model_hparams)
+                        fetches['metric/image_summary/{}_inference'.format(name)] = pad(stbmajor(fetched_npy['inference_images']), self._hparams.pad_amount)
+                        fetches['metric/image_summary/{}'.format(name)] = pad_and_concat(stbmajor(fetched_npy['pred_targets']), fetched_npy['pred_frames'], self._hparams.pad_amount)
+                    else:  # used for everything else:
+                        fetches['metric/image_summary/{}'.format(name)] = pad_and_concat(fetched_npy['real_images'], fetched_npy['pred_frames'], self._hparams.pad_amount)
 
         if itr % self._hparams.scalar_summary_freq == 0:
             fetches['metric/loss/train'] = train_loss
@@ -195,6 +201,10 @@ class VPredTrainable(Trainable):
                     if 'pixel' in key and '_annotated' not in name:
                         # doesn't log pixel metrics for trajs which don't have pixels
                         continue
+                    elif 'pixel' not in key and '_annotated' in name:
+                        # don't log other metrics (like l1_loss) for debug modes
+                        continue
+
                     fetches['metric/{}/{}'.format(key, name)] = value
 
         fetches['done'] = itr >= self._hparams.max_steps

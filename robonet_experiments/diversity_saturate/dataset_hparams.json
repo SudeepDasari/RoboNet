@@ -1,0 +1,9 @@
+{
+    "dataset": "AnnotatedRoboNet",
+    "buffer_size":1,
+    "load_T": 15,
+    "target_adim": 5,
+    "action_mismatch": 1,
+    "target_sdim": 5,
+    "state_mismatch": 1
+}
