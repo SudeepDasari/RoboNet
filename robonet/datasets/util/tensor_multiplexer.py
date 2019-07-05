@@ -27,6 +27,7 @@ def multiplex_tensors(dataset, key_name, train_cond=None):
 
 class MultiplexedTensors:
     def __init__(self, dataset, tensor_names):
+        self._dataset = dataset
         self._mode_ind = {}
         for i, k in enumerate(dataset.modes):
             self._mode_ind[k] = i
@@ -44,7 +45,7 @@ class MultiplexedTensors:
         return self._tensor_dict
     
     def get_feed_dict(self, mode):
-        dataset_feed = loader.build_feed_dict(mode)
+        dataset_feed = self._dataset.build_feed_dict(mode)
         if isinstance(mode, int):
             assert 0 <= mode < len(self._mode_ind.keys()), "mode_index must be in range 0 to len(modes) - 1"
             dataset_feed[self._train_cond] = mode
@@ -52,6 +53,7 @@ class MultiplexedTensors:
         
         assert isinstance(mode, str) 
         assert mode in self._mode_ind, "{} not supported! Modes are {}".foramt(mode, self._mode_ind.keys())
+               
         dataset_feed[self._train_cond] = self._mode_ind[mode]
         return dataset_feed
 
