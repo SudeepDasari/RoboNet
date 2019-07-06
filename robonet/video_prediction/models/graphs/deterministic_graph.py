@@ -24,6 +24,7 @@ class DeterministicWrapper(BaseGraph):
                 inputs['e'] = outputs_enc
 
             cell = DetVPredCell(mode, inputs, hparams)
+            import pdb; pdb.set_trace()
             outputs, _ = tf.nn.dynamic_rnn(cell, inputs, dtype=tf.float32,
                                     swap_memory=False, time_major=True)
 

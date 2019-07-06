@@ -220,7 +220,7 @@ class VPredCell(tf.nn.rnn_cell.RNNCell):
         self._state_size = state_size
 
         ground_truth_sampling_shape = [self.hparams.sequence_length - 1 - self.hparams.context_frames, batch_size]
-        if self.hparams.schedule_sampling == 'none' or self._mode != tf.esimator.ModeKeys.TRAIN:
+        if self.hparams.schedule_sampling == 'none' or self._mode != tf.estimator.ModeKeys.TRAIN:
             ground_truth_sampling = tf.constant(False, dtype=tf.bool, shape=ground_truth_sampling_shape)
         elif self.hparams.schedule_sampling in ('inverse_sigmoid', 'linear'):
             if self.hparams.schedule_sampling == 'inverse_sigmoid':

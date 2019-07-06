@@ -60,7 +60,7 @@ def vpred_generator(num_gpus, graph_type, tpu_mode, model_inputs, model_targets,
     
     # if annotations are present construct 'pixel flow error metric'
     if 'annotations' in model_inputs or 'pixel_distributions' in model_inputs:
-        if tf.estimator.ModeKeys.TRAIN:
+        if mode == tf.estimator.ModeKeys.TRAIN:
             inputs['pix_distribs'] = tf.transpose(model_inputs['annotations'], [1, 0, 2, 3, 4])
             targets['pix_distribs'] = tf.transpose(model_targets['annotations'][:, hparams.context_frames:], [1, 0, 2, 3, 4])
         else:
@@ -82,7 +82,7 @@ def vpred_generator(num_gpus, graph_type, tpu_mode, model_inputs, model_targets,
     model_graph = graph_class()
 
     if num_gpus == 1:
-        outputs = model_graph.build_graph(inputs, hparams, outputs_enc=outputs_enc)
+        outputs = model_graph.build_graph(mode, inputs, hparams, outputs_enc=outputs_enc)
     else:
         # TODO: add multi-gpu evaluation support
         raise NotImplementedError

@@ -10,8 +10,8 @@ from robonet.video_prediction.utils import tf_utils
 import pdb
 
 class DetVPredCell(VPredCell):
-    def __init__(self, inputs, hparams, reuse=None):
-        super().__init__(inputs, hparams, reuse)
+    def __init__(self, mode, inputs, hparams, reuse=None):
+        super(DetVPredCell, self).__init__(mode, inputs, hparams, reuse)
 
     def call(self, inputs, states):
         norm_layer = ops.get_norm_layer(self.hparams.norm_layer)
