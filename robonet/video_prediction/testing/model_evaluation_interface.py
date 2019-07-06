@@ -52,6 +52,8 @@ class VPredEvaluation(object):
     
     def _build_inputs(self):
         context_frames = self._model_hparams['context_frames']
+        assert context_frames > 1, "needs at least 1 context action (so 2 frames)"
+        
         input_length = self._model_hparams['sequence_length'] - 1
         pad_len = input_length - context_frames
         
@@ -80,7 +82,7 @@ class VPredEvaluation(object):
         assert self._restored, "must restore before testing can continue!"
         assert context_tensors['context_frames'].shape[1] == 1, "only one camera supported!"
         context_images = context_tensors['context_frames'][-self._model_hparams['context_frames']:, 0][None]
-        context_actions = context_tensors['context_actions'][-self._model_hparams['context_frames']:][None]
+        context_actions = context_tensors['context_actions'][(1 - self._model_hparams['context_frames']):][None]
         context_states = context_tensors['context_states'][-self._model_hparams['context_frames']:][None]
         context_distributions = context_tensors.get('context_pixel_distributions', None)
         if self._test_hparams.designated_pixel_count:
