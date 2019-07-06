@@ -58,8 +58,8 @@ class VPredEvaluation(object):
         height, width = self._test_hparams.img_dims
         self._images_pl = tf.placeholder(tf.float32, [1, context_frames, height, width, 3])
         self._states_pl = tf.placeholder(tf.float32, [1, context_frames, self._test_hparams.sdim])
-        self._context_actions_pl = tf.placeholder(tf.float32, [1, context_frames, self._test_hparams.adim])
-        self._actions_pl = tf.placeholder(tf.float32, [self._test_hparams.run_batch_size, pad_len, self._test_hparams.adim])
+        self._context_actions_pl = tf.placeholder(tf.float32, [1, context_frames - 1, self._test_hparams.adim])
+        self._actions_pl = tf.placeholder(tf.float32, [self._test_hparams.run_batch_size, pad_len + 1, self._test_hparams.adim])
 
         if self._test_hparams.designated_pixel_count:
             self._pixel_dist_pl = tf.placeholder(tf.float32, [1, context_frames, height, width, self._test_hparams.designated_pixel_count])
@@ -80,18 +80,18 @@ class VPredEvaluation(object):
         assert self._restored, "must restore before testing can continue!"
         assert context_tensors['context_frames'].shape[1] == 1, "only one camera supported!"
         context_images = context_tensors['context_frames'][-self._model_hparams['context_frames']:, 0][None]
-        context_actions = context_tensors['context_actions'][-self._model_hparams['context_frames']:]
-        context_states = context_tensors['context_states'][-self._model_hparams['context_frames']:]
+        context_actions = context_tensors['context_actions'][-self._model_hparams['context_frames']:][None]
+        context_states = context_tensors['context_states'][-self._model_hparams['context_frames']:][None]
         context_distributions = context_tensors.get('context_pixel_distributions', None)
         if self._test_hparams.designated_pixel_count:
-            context_distributions = context_distributions[-self._model_hparams['context_frames']:]
+            context_distributions = context_distributions[-self._model_hparams['context_frames']:, 0][None]
         
         input_actions = action_tensors['actions']
         n_runs = math.ceil(input_actions.shape[0] / float(self._test_hparams.run_batch_size))
         assert n_runs
 
         ret_dict = None
-        for n in n_runs:
+        for n in range(n_runs):
             selected_actions = input_actions[n * self._test_hparams.run_batch_size :(n + 1) * self._test_hparams.run_batch_size]
             if selected_actions.shape[0] < self._test_hparams.run_batch_size:
                 pad = np.zeros((self._test_hparams.run_batch_size - selected_actions.shape[0], selected_actions.shape[1], selected_actions.shape[2]))
@@ -105,7 +105,7 @@ class VPredEvaluation(object):
                 ret_dict = run_t
             else:
                 for k, v in run_t.items():
-                    ret_dict[k] = np.concatenate((ret_dict[k], v[:selected_actions.shape[0]]), dtype=ret_dict[k].dtype)
+                    ret_dict[k] = np.concatenate((ret_dict[k], v[:selected_actions.shape[0]]), axis=0)
         return ret_dict
 
     def _feed(self, context_images, context_actions, context_states, context_distributions, input_actions):
