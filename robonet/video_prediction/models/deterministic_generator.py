@@ -186,7 +186,7 @@ def vpred_generator(num_gpus, graph_type, tpu_mode, model_inputs, model_targets,
             return est
         return est, scalar_summaries, tensor_summaries
 
-    ret_dict = {'predicted_frames': pred_frames[:, None]}
+    ret_dict = {'predicted_frames': pred_frames[:, :, None]}
     if 'gen_pix_distribs' in outputs:
-        ret_dict['predicted_pixel_distributions'] = tf.transpose(outputs['gen_pix_distribs'], [1, 0, 2, 3, 4])[:, None]
+        ret_dict['predicted_pixel_distributions'] = tf.transpose(outputs['gen_pix_distribs'], [1, 0, 2, 3, 4])[:, :, None]
     return ret_dict

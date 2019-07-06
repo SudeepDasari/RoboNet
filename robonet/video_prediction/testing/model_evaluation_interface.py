@@ -89,7 +89,7 @@ class VPredEvaluation(object):
             context_distributions = context_distributions[-self._model_hparams['context_frames']:, 0][None]
         
         input_actions = action_tensors['actions']
-        n_runs = math.ceil(input_actions.shape[0] / float(self._test_hparams.run_batch_size))
+        n_runs = int(math.ceil(input_actions.shape[0] / float(self._test_hparams.run_batch_size)))
         assert n_runs
 
         ret_dict = None
@@ -103,14 +103,20 @@ class VPredEvaluation(object):
             
             run_t = self._feed(context_images, context_actions, context_states, context_distributions, padded_actions)
             
+            for k in run_t.keys():
+                run_t[k] = run_t[k][:selected_actions.shape[0]]
+
             if ret_dict is None:
                 ret_dict = run_t
             else:
                 for k, v in run_t.items():
-                    ret_dict[k] = np.concatenate((ret_dict[k], v[:selected_actions.shape[0]]), axis=0)
+                    ret_dict[k] = np.concatenate((ret_dict[k], v), axis=0)
         return ret_dict
 
     def _feed(self, context_images, context_actions, context_states, context_distributions, input_actions):
+        if context_images.dtype == np.uint8:
+            context_images = context_images.astype(np.float32) / 255
+        
         feed_dict = {self._images_pl: context_images,
                         self._states_pl: context_states, 
                         self._context_actions_pl: context_actions, 
