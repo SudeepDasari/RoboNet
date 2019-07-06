@@ -66,7 +66,7 @@ def vpred_generator(num_gpus, graph_type, tpu_mode, model_inputs, model_targets,
         else:
              inputs['pix_distribs'] = tf.transpose(model_inputs['pixel_distributions'], [1, 0, 2, 3, 4])
 
-    if hparams.encoder == 'one_step':
+    if 'encoder' in hparams and hparams.encoder == 'one_step':
         assert mode == tf.estimator.ModeKeys.TRAIN
         tlen = inputs['images'].get_shape().as_list()[0]
         inputs_tr_inf, targets_tr_inf = split_model_inference(inputs, targets, hparams)
@@ -108,7 +108,7 @@ def vpred_generator(num_gpus, graph_type, tpu_mode, model_inputs, model_targets,
         scalar_summaries = {'learning_rate': lr}
         tensor_summaries = {'pred_frames': pred_frames}
 
-        if hparams.encoder == 'one_step':
+        if 'encoder' in hparams and hparams.encoder == 'one_step':
             tensor_summaries['inference_images'] = inputs_tr_inf['inference']['images']
             tensor_summaries['pred_targets'] = target_images
             tensor_summaries['pred_target_dists'] = targets_tr_inf['train']['pix_distribs']

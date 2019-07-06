@@ -89,7 +89,7 @@ class VPredEvaluation(object):
             context_distributions = context_distributions[-self._model_hparams['context_frames']:, 0][None]
         
         input_actions = action_tensors['actions']
-        n_runs = math.ceil(input_actions.shape[0] / float(self._test_hparams.run_batch_size))
+        n_runs = int(math.ceil(input_actions.shape[0] / float(self._test_hparams.run_batch_size)))
         assert n_runs
 
         ret_dict = None
