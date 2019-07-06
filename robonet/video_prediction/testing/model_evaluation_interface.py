@@ -6,6 +6,7 @@ from robonet.video_prediction.utils import tf_utils
 import tensorflow as tf
 from tensorflow.contrib.training import HParams
 import os
+import math
 
 
 class VPredEvaluation(object):
@@ -77,7 +78,7 @@ class VPredEvaluation(object):
     
     def predict(self, context_tensors, action_tensors):
         assert self._restored, "must restore before testing can continue!"
-        assert context_frames.shape[1] == 1, "only one camera supported!"
+        assert context_tensors['context_frames'].shape[1] == 1, "only one camera supported!"
         context_images = context_tensors['context_frames'][-self._model_hparams['context_frames']:, 0][None]
         context_actions = context_tensors['context_actions'][-self._model_hparams['context_frames']:]
         context_states = context_tensors['context_states'][-self._model_hparams['context_frames']:]
