@@ -135,8 +135,9 @@ def identity_kernel(kernel_size):
 
 
 class VPredCell(tf.nn.rnn_cell.RNNCell):
-    def __init__(self, inputs, hparams, reuse=None):
+    def __init__(self, mode, inputs, hparams, reuse=None):
         super(VPredCell, self).__init__(_reuse=reuse)
+        self._mode = mode
         self.inputs = inputs
         self.hparams = hparams
 
@@ -219,7 +220,7 @@ class VPredCell(tf.nn.rnn_cell.RNNCell):
         self._state_size = state_size
 
         ground_truth_sampling_shape = [self.hparams.sequence_length - 1 - self.hparams.context_frames, batch_size]
-        if self.hparams.schedule_sampling == 'none':
+        if self.hparams.schedule_sampling == 'none' or self._mode != tf.esimator.ModeKeys.TRAIN:
             ground_truth_sampling = tf.constant(False, dtype=tf.bool, shape=ground_truth_sampling_shape)
         elif self.hparams.schedule_sampling in ('inverse_sigmoid', 'linear'):
             if self.hparams.schedule_sampling == 'inverse_sigmoid':

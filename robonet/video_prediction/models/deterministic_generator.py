@@ -46,10 +46,12 @@ def vpred_generator(num_gpus, graph_type, tpu_mode, model_inputs, model_targets,
     # prep inputs here
     inputs, targets = {}, {}
     inputs['actions'], inputs['images'] = tf.transpose(model_inputs['actions'], [1, 0, 2]), tf.transpose(model_inputs['images'], [1, 0, 2, 3, 4])
-    targets['images'] = tf.transpose(model_targets['images'][:, hparams.context_frames:], [1, 0, 2, 3, 4])
+    if mode == tf.estimator.ModeKeys.TRAIN:
+        targets['images'] = tf.transpose(model_targets['images'][:, hparams.context_frames:], [1, 0, 2, 3, 4])
+    
     if hparams.use_states:
         inputs['states'] = tf.transpose(model_inputs['states'][:, hparams.context_frames:], [1, 0, 2])
-        if hparams.state_weight:
+        if hparams.state_weight and mode == tf.estimator.ModeKeys.TRAIN:
             targets['states'] = tf.transpose(model_targets['state'], [1, 0, 2])
         else:
             logger.warning('states supplied but state_weight=0 so no loss will be computed on predicted states')
@@ -57,11 +59,15 @@ def vpred_generator(num_gpus, graph_type, tpu_mode, model_inputs, model_targets,
         raise ValueError("states not supplied but state_weight > 0")
     
     # if annotations are present construct 'pixel flow error metric'
-    if 'annotations' in model_inputs:
-        inputs['pix_distribs'] = tf.transpose(model_inputs['annotations'], [1, 0, 2, 3, 4])
-        targets['pix_distribs'] = tf.transpose(model_targets['annotations'][:, hparams.context_frames:], [1, 0, 2, 3, 4])
+    if 'annotations' in model_inputs or 'pixel_distributions' in model_inputs:
+        if tf.estimator.ModeKeys.TRAIN:
+            inputs['pix_distribs'] = tf.transpose(model_inputs['annotations'], [1, 0, 2, 3, 4])
+            targets['pix_distribs'] = tf.transpose(model_targets['annotations'][:, hparams.context_frames:], [1, 0, 2, 3, 4])
+        else:
+             inputs['pix_distribs'] = tf.transpose(model_inputs['pixel_distributions'], [1, 0, 2, 3, 4])
 
     if hparams.encoder == 'one_step':
+        assert mode == tf.estimator.ModeKeys.TRAIN
         tlen = inputs['images'].get_shape().as_list()[0]
         inputs_tr_inf, targets_tr_inf = split_model_inference(inputs, targets, hparams)
         outputs_enc = onestep_encoder_fn(inputs_tr_inf['inference'], hparams)
@@ -180,5 +186,7 @@ def vpred_generator(num_gpus, graph_type, tpu_mode, model_inputs, model_targets,
             return est
         return est, scalar_summaries, tensor_summaries
 
-    # if test build the predictor
-    raise NotImplementedError
+    ret_dict = {'predicted_frames': pred_frames}
+    if 'gen_pix_distribs' in outputs:
+        ret_dict['predicted_pixel_distributions'] = tf.transpose(outputs['gen_pix_distribs'], [1, 0, 2, 3, 4])
+    return ret_dict
