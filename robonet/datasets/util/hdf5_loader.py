@@ -1,10 +1,12 @@
 import h5py
 import cv2
+import pdb
 import imageio
 import io
 import hashlib
 import numpy as np
 import os
+import random
 
 
 class ACTION_MISMATCH:
@@ -23,13 +25,13 @@ def default_loader_hparams():
     return {
             'target_adim': 4,
             'target_sdim': 5,
-            'state_mismatch': STATE_MISMATCH.ERROR,
-            'action_mismatch': ACTION_MISMATCH.ERROR,
+            'state_mismatch': STATE_MISMATCH.ERROR,     # TODO make better flag parsing
+            'action_mismatch': ACTION_MISMATCH.ERROR,   # TODO make better flag parsing
             'img_size': (48, 64),
-            'load_random_cam': True,
-            'cams_to_load': (-1),
+            'cams_to_load': [0],
             'impute_autograsp_action': True,
             'load_annotations': False,
+            'zero_if_missing_annotation': False, 
             'load_T': 0                               # TODO implement error checking here for jagged reading
             }
 
@@ -39,6 +41,8 @@ def load_camera_imgs(cam_index, file_pointer, file_metadata, target_dims, start_
     old_dims = file_metadata['frame_dim']
     length = file_metadata['img_T']
     encoding = file_metadata['img_encoding']
+    image_format = file_metadata['image_format']
+
     if n_load is None:
         n_load = length
 
@@ -63,7 +67,12 @@ def load_camera_imgs(cam_index, file_pointer, file_metadata, target_dims, start_
             images[t] = img
         else:
             images[t] = cv2.resize(img, (target_width, target_height), interpolation=resize_method)
-    return images
+    
+    if image_format == 'RGB':
+        return images
+    elif image_format == 'BGR':
+        return images[:, :, :, ::-1]
+    raise NotImplementedError
 
 
 def load_states(file_pointer, meta_data, hparams):
@@ -73,10 +82,10 @@ def load_states(file_pointer, meta_data, hparams):
 
     elif sdim < hparams.target_sdim and hparams.state_mismatch & STATE_MISMATCH.PAD_ZERO:
         pad = np.zeros((s_T, hparams.target_sdim - sdim), dtype=np.float32)
-        return np.concatenate((file_pointer['env']['state'][:], pad))
+        return np.concatenate((file_pointer['env']['state'][:], pad), axis=-1)
 
     elif sdim > hparams.target_sdim and hparams.state_mismatch & STATE_MISMATCH.CLEAVE:
-        return file_pointer['env']['state'][:][:, :sdim]
+        return file_pointer['env']['state'][:][:, :hparams.target_sdim]
 
     else:
         raise ValueError("file sdim - {}, target sdim - {}, pad behavior - {}".format(sdim, hparams.target_sdim, hparams.state_mismatch))
@@ -99,14 +108,14 @@ def load_actions(file_pointer, meta_data, hparams):
                 action_append[t, 0] = high_val
             else:
                 action_append[t, 0] = low_val
-        return np.concatenate((old_actions, action_append))
+        return np.concatenate((old_actions, action_append), axis=-1)
 
     elif adim < hparams.target_adim and hparams.action_mismatch & ACTION_MISMATCH.PAD_ZERO:
         pad = np.zeros((a_T, hparams.target_adim - adim), dtype=np.float32)
-        return np.concatenate((file_pointer['policy']['actions'][:], pad))
+        return np.concatenate((file_pointer['policy']['actions'][:], pad), axis=-1)
 
     elif adim > hparams.target_adim and hparams.action_mismatch & ACTION_MISMATCH.CLEAVE:
-        return file_pointer['policy']['actions'][:][:, :adim]
+        return file_pointer['policy']['actions'][:][:, :hparams.target_adim]
 
     else:
         raise ValueError("file adim - {}, target adim - {}, pad behavior - {}".format(adim, hparams.target_adim, hparams.action_mismatch))
@@ -116,8 +125,12 @@ def load_annotations(file_pointer, metadata, hparams, cams_to_load):
     old_height, old_width = metadata['frame_dim']
     target_height, target_width = hparams.img_size
     scale_height, scale_width = target_height / float(old_height), target_width / float(old_width)
-    point_mat = file_pointer['env']['bbox_annotations'][:].astype(np.int32)
     annot = np.zeros((metadata['img_T'], len(cams_to_load), target_height, target_width, 2), dtype=np.float32)
+    if metadata.get('contains_annotation', False) != True and hparams.zero_if_missing_annotation:
+        return annot
+
+    assert metadata['contains_annotation'], "no annotations to load!"
+    point_mat = file_pointer['env']['bbox_annotations'][:].astype(np.int32)
 
     for t in range(metadata['img_T']):
         for n, chosen_cam in enumerate(cams_to_load):
@@ -129,40 +142,33 @@ def load_annotations(file_pointer, metadata, hparams, cams_to_load):
     return annot
 
 
-def load_data(file_metadata_tuple, hparams, rng):
-    f_name, file_metadata = file_metadata_tuple
+def load_data(f_name, file_metadata, hparams, rng=None):
+    rng = random.Random(rng)
+
     assert os.path.exists(f_name) and os.path.isfile(f_name), "invalid f_name"
-    buf = open(f_name, 'rb').read()
-    assert hashlib.sha256(buf).hexdigest() == file_metadata['sha256'], "file hash doesn't match meta-data"
+    with open(f_name, 'rb') as f:
+        buf = f.read()
+    assert hashlib.sha256(buf).hexdigest() == file_metadata['sha256'], "file hash doesn't match meta-data. maybe delete pkl and re-generate?"
     
     with h5py.File(io.BytesIO(buf)) as hf:
-        start_time, n_states = 0, min(file_metadata['state_T'], file_metadata['img_T'])
+        start_time, n_states = 0, min([file_metadata['state_T'], file_metadata['img_T'], file_metadata['action_T'] + 1])
         assert n_states > 1, "must be more than one state in loaded tensor!"
         if 1 < hparams.load_T < n_states:
             start_time = rng.randint(0, n_states - hparams.load_T)
             n_states = hparams.load_T
 
-        # load cameras
-        if hparams.load_random_cam:
-            rand_cam = rng.randint(0, file_metadata['ncam'] - 1)
-            images = load_camera_imgs(rand_cam, hf, file_metadata, hparams.img_size, start_time, n_states)
-            selected_cams = [rand_cam]
-        else:
-            assert all([i < file_metadata['ncam'] for i in hparams.cams_to_load]), "cams_to_load out of bounds!"
-            images, selected_cams = [], []
-            for cam_index in hparams.cams_to_load:
-                images.append(load_camera_imgs(cam_index, hf, file_metadata, hparams.img_size, start_time, n_states)[None])
-                selected_cams.append(cam_index)
-            images = np.swapaxes(np.concatenate(images, 0), 0, 1)
+        assert all([0 <= i < file_metadata['ncam'] for i in hparams.cams_to_load]), "cams_to_load out of bounds!"
+        images, selected_cams = [], []
+        for cam_index in hparams.cams_to_load:
+            images.append(load_camera_imgs(cam_index, hf, file_metadata, hparams.img_size, start_time, n_states)[None])
+            selected_cams.append(cam_index)
+        images = np.swapaxes(np.concatenate(images, 0), 0, 1)
 
         actions = load_actions(hf, file_metadata, hparams).astype(np.float32)[start_time:start_time + n_states-1]
         states = load_states(hf, file_metadata, hparams).astype(np.float32)[start_time:start_time + n_states]
 
         if hparams.load_annotations:
-            assert file_metadata.get('contains_annotation'), "no annotations to load!"
-            annotations = load_annotations(hf, file_metadata, hparams, selected_cams)
-            if hparams.load_random_cam:
-                annotations = annotations[:, 0]
+            annotations = load_annotations(hf, file_metadata, hparams, selected_cams)[start_time:start_time + n_states]
             return images, actions, states, annotations
 
     return images, actions, states
@@ -191,9 +197,9 @@ if __name__ == '__main__':
         hparams.load_annotations = True
         print(meta_data[meta_data['contains_annotation'] == True])
         meta_data = meta_data[meta_data['contains_annotation'] == True]
-        imgs, actions, states, annot = load_data((args.file, meta_data.get_file_metadata(args.file)), hparams, random.Random())
+        imgs, actions, states, annot = load_data((args.file, meta_data.get_file_metadata(args.file)), hparams)
     else:
-        imgs, actions, states = load_data((args.file, meta_data.get_file_metadata(args.file)), hparams, random.Random())
+        imgs, actions, states = load_data((args.file, meta_data.get_file_metadata(args.file)), hparams)
     
     print('actions', actions.shape)
     print('states', states.shape)

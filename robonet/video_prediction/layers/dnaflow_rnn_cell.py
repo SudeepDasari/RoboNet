@@ -4,6 +4,7 @@ from robonet.video_prediction.ops import dense, conv2d, flatten, tile_concat
 from robonet.video_prediction.rnn_ops import BasicConv2DLSTMCell, Conv2DGRUCell
 from robonet.video_prediction.utils import tf_utils
 
+import numpy as np
 
 RELU_SHIFT = 1e-7
 
@@ -134,69 +135,26 @@ def identity_kernel(kernel_size):
 
 
 class VPredCell(tf.nn.rnn_cell.RNNCell):
-    def __init__(self, inputs, hparams, reuse=None):
+    def __init__(self, mode, inputs, hparams, reuse=None):
         super(VPredCell, self).__init__(_reuse=reuse)
+        self._mode = mode
         self.inputs = inputs
         self.hparams = hparams
 
         if self.hparams.where_add not in ('input', 'all', 'middle'):
             raise ValueError('Invalid where_add %s' % self.hparams.where_add)
+        
+        assert len(self.hparams.encoder_layer_size_mult) == len(self.hparams.encoder_layer_use_rnn)
+        assert len(self.hparams.decoder_layer_size_mult) == len(self.hparams.decoder_layer_use_rnn)
+
+        self.encoder_layer_specs = [(mult * self.hparams.ngf, use_rnn) for mult, use_rnn in 
+                                    zip(self.hparams.encoder_layer_size_mult, self.hparams.encoder_layer_use_rnn)]
+        self.decoder_layer_specs = [(mult * self.hparams.ngf, use_rnn) for mult, use_rnn in 
+                                    zip(self.hparams.decoder_layer_size_mult, self.hparams.decoder_layer_use_rnn)]
 
         batch_size = inputs['images'].shape[1].value
         image_shape = inputs['images'].shape.as_list()[2:]
         height, width, _ = image_shape
-        scale_size = max(height, width)
-        if scale_size == 256:
-            self.encoder_layer_specs = [
-                (self.hparams.ngf, False),
-                (self.hparams.ngf * 2, False),
-                (self.hparams.ngf * 4, True),
-                (self.hparams.ngf * 8, True),
-                (self.hparams.ngf * 8, True),
-            ]
-            self.decoder_layer_specs = [
-                (self.hparams.ngf * 8, True),
-                (self.hparams.ngf * 4, True),
-                (self.hparams.ngf * 2, False),
-                (self.hparams.ngf, False),
-                (self.hparams.ngf, False),
-            ]
-        elif scale_size == 128:
-            self.encoder_layer_specs = [
-                (self.hparams.ngf, True),
-                (self.hparams.ngf * 2, True),
-                (self.hparams.ngf * 4, True),
-                (self.hparams.ngf * 8, True),
-            ]
-            self.decoder_layer_specs = [
-                (self.hparams.ngf * 4, True),
-                (self.hparams.ngf * 2, True),
-                (self.hparams.ngf, True),
-                (self.hparams.ngf, False),
-            ]
-
-        elif scale_size == 64:
-            self.encoder_layer_specs = [
-                (self.hparams.ngf, True),
-                (self.hparams.ngf * 2, True),
-                (self.hparams.ngf * 4, True),
-            ]
-            self.decoder_layer_specs = [
-                (self.hparams.ngf * 2, True),
-                (self.hparams.ngf, True),
-                (self.hparams.ngf, False),
-            ]
-        elif scale_size == 32:
-            self.encoder_layer_specs = [
-                (self.hparams.ngf, True),
-                (self.hparams.ngf * 2, True),
-            ]
-            self.decoder_layer_specs = [
-                (self.hparams.ngf, True),
-                (self.hparams.ngf, False),
-            ]
-        else:
-            raise NotImplementedError
 
         # output_size
         gen_input_shape = list(image_shape)
@@ -219,6 +177,16 @@ class VPredCell(tf.nn.rnn_cell.RNNCell):
             output_size['transformed_pix_distribs'] = tf.TensorShape([height, width, num_motions, num_masks])
         if 'states' in inputs:
             output_size['gen_states'] = inputs['states'].shape[2:]
+        if 'zrs' in inputs:
+            output_size['zat_mu'] = self.hparams.za_dim
+            output_size['zat_log_sigma_sq'] = self.hparams.za_dim
+            output_size['gen_actions'] = inputs['actions'].shape[-1].value
+        if 'zr_mu' in inputs and 'zr_log_sigma_sq' in inputs:
+            output_size['zr_mu'] = self.hparams.zr_dim
+            output_size['zr_log_sigma_sq'] = self.hparams.zr_dim
+        if 'e' in inputs:
+            output_size['e'] = self.hparams.e_dim
+
         if self.hparams.transformation == 'flow':
             output_size['gen_flows'] = tf.TensorShape([height, width, 2, self.hparams.last_frames * self.hparams.num_transformed_images])
             output_size['gen_flows_rgb'] = tf.TensorShape([height, width, 3, self.hparams.last_frames * self.hparams.num_transformed_images])
@@ -252,7 +220,7 @@ class VPredCell(tf.nn.rnn_cell.RNNCell):
         self._state_size = state_size
 
         ground_truth_sampling_shape = [self.hparams.sequence_length - 1 - self.hparams.context_frames, batch_size]
-        if self.hparams.schedule_sampling == 'none':
+        if self.hparams.schedule_sampling == 'none' or self._mode != tf.estimator.ModeKeys.TRAIN:
             ground_truth_sampling = tf.constant(False, dtype=tf.bool, shape=ground_truth_sampling_shape)
         elif self.hparams.schedule_sampling in ('inverse_sigmoid', 'linear'):
             if self.hparams.schedule_sampling == 'inverse_sigmoid':
@@ -333,6 +301,7 @@ class VPredCell(tf.nn.rnn_cell.RNNCell):
 
         image = tf.where(self.ground_truth[t], inputs['images'], states['gen_image'])  # schedule sampling (if any)
         last_images = states['last_images'][1:] + [image]
+
         if 'pix_distribs' in inputs:
             pix_distrib = tf.where(self.ground_truth[t], inputs['pix_distribs'], states['gen_pix_distrib'])
             last_pix_distribs = states['last_pix_distribs'][1:] + [pix_distrib]
@@ -365,6 +334,7 @@ class VPredCell(tf.nn.rnn_cell.RNNCell):
 
         layers = []
         new_conv_rnn_states = []
+
         for i, (out_channels, use_conv_rnn) in enumerate(self.encoder_layer_specs):
             with tf.variable_scope('h%d' % i):
                 if i == 0:

@@ -9,12 +9,12 @@ def construct_image_tile(tensor):
     return np.concatenate([im for im in tensor], axis=-2)
 
 
-def encode_images(tensor):
+def encode_images(tensor, fps=4):
     if len(tensor.shape) == 3:
         return cv2.imencode('.jpg', tensor[:, :, ::-1])[1]
     elif len(tensor.shape) == 4:
         buffer = io.BytesIO()
-        writer = imageio.get_writer(buffer, format='gif')
+        writer = imageio.get_writer(buffer, format='gif', fps=fps)
         [writer.append_data(im) for im in tensor]
         writer.close()
         buffer.seek(0)

@@ -10,6 +10,42 @@ except ImportError:
 from robonet.video_prediction.utils.tf_utils import PersistentOpEvaluator, with_flat_batch
 
 
+def expected_pixel_distance(real_dist, pred_dist):
+    height, width = real_dist.get_shape().as_list()[-3:-1]
+    obj_w = tf.cast(tf.expand_dims(tf.expand_dims(tf.reduce_max(tf.argmax(real_dist, axis=-2), axis=-2), -2), -2), tf.float32)
+    obj_h = tf.cast(tf.expand_dims(tf.expand_dims(tf.reduce_max(tf.argmax(real_dist, axis=-3), axis=-2), -2), -2), tf.float32)
+
+    dist_h = tf.square(tf.reshape(tf.cast(tf.range(height), tf.float32), [1, 1, -1, 1, 1]) - obj_h)
+    dist_w = tf.square(tf.reshape(tf.cast(tf.range(width), tf.float32), [1, 1, 1, -1, 1]) - obj_w)
+    dist = tf.sqrt(dist_h + dist_w)
+
+    return tf.reduce_sum(tf.reduce_sum(dist * pred_dist, -2), -2)
+
+
+def expected_square_pixel_distance(real_dist, pred_dist):
+    """
+    Calculates E[(p - p_true)^T (p - p_true)]
+    """
+    height, width = real_dist.get_shape().as_list()[-3:-1]
+    height_field = tf.reshape(tf.cast(tf.range(height), tf.float32), [1, 1, -1, 1])
+    width_field = tf.reshape(tf.cast(tf.range(width), tf.float32), [1, 1, -1, 1])
+
+    def exp_pix(tensor):
+        h = tf.reduce_sum(height_field * tf.reduce_sum(tensor, axis=-2), -2)[:, :, :, None]
+        w = tf.reduce_sum(width_field * tf.reduce_sum(tensor, axis=-3), -2)[:, :, :, None]
+        return tf.concat((h, w), axis=-1)
+    
+    def exp_square_pix(tensor):
+        h = tf.reduce_sum((height_field ** 2) * tf.reduce_sum(tensor, axis=-2), -2)[:, :, :, None]
+        w = tf.reduce_sum((width_field ** 2) * tf.reduce_sum(tensor, axis=-3), -2)[:, :, :, None]
+        return tf.concat((h, w), axis=-1)
+
+    sq_pred = tf.reduce_sum(exp_square_pix(pred_dist), axis=-1)
+    sq_real = tf.reduce_sum(exp_square_pix(real_dist), axis=-1)
+    dot_term = tf.reduce_sum(exp_pix(real_dist) * exp_pix(pred_dist), axis=-1)
+    return sq_pred - 2 * dot_term + sq_real
+
+
 def _axis(keep_axis, ndims):
     if keep_axis is None:
         axis = None

@@ -7,6 +7,7 @@ from tqdm import tqdm
 from multiprocessing import Pool, cpu_count
 import hashlib
 import io
+import random
 
 
 class MetaDataContainer:
@@ -31,6 +32,14 @@ class MetaDataContainer:
     def files(self):
         return ['{}/{}'.format(self._base_path, f) for f in self.frame.index]
     
+    def get_shuffled_files(self, rng):
+        files = ['{}/{}'.format(self._base_path, f) for f in self.frame.index]
+        if rng:
+            rng.shuffle(files)
+        else:
+            random.shuffle(files)
+        return files
+
     @property
     def base_path(self):
         return self._base_path
@@ -78,7 +87,8 @@ def load_metadata_dict(fname):
     buf = open(fname, 'rb').read()
 
     with h5py.File(io.BytesIO(buf)) as hf:
-        meta_data_dict = {}
+        meta_data_dict = {'file_version': hf['file_version'][()]}
+
         meta_data_dict['sha256'] = hashlib.sha256(buf).hexdigest()
         meta_data_dict['sdim'] = hf['env']['state'].shape[1]
         meta_data_dict['state_T'] = hf['env']['state'].shape[0]
@@ -90,13 +100,15 @@ def load_metadata_dict(fname):
         n_cams = hf['env'].attrs.get('n_cams', 0)
         if n_cams:
             meta_data_dict['ncam'] = n_cams
-            meta_data_dict['frame_dim'] = hf['env']['cam0_video']['frames'].attrs['shape'][:2]
 
-            # TODO remove second condition and get condition after datasets are re-generated
-            if hf['env'].attrs.get('cam_encoding', 'jpg') == 'mp4' or 'T' in hf['env']['cam0_video']['frames'].attrs:
+            if hf['env'].attrs['cam_encoding'] == 'mp4':
+                meta_data_dict['frame_dim'] = hf['env']['cam0_video']['frames'].attrs['shape'][:2]
                 meta_data_dict['img_T'] = hf['env']['cam0_video']['frames'].attrs['T']
                 meta_data_dict['img_encoding'] = 'mp4'
+                meta_data_dict['image_format'] = hf['env']['cam0_video']['frames'].attrs['image_format']
             else:
+                meta_data_dict['frame_dim'] = hf['env']['cam0_video']['frame0'].attrs['shape'][:2]
+                meta_data_dict['image_format'] = hf['env']['cam0_video']['frame0'].attrs['image_format']
                 meta_data_dict['img_encoding'] = 'jpg'
                 meta_data_dict['img_T'] = len(hf['env']['cam0_video'])
 
@@ -122,10 +134,19 @@ def get_metadata_frame(files):
     if isinstance(files, str):
         base_path = files
         files = sorted(glob.glob('{}/*.hdf5'.format(files)))
+        if not files:
+            raise ValueError('no hdf5 files found!')
+
         if os.path.exists('{}/meta_data.pkl'.format(base_path)):
             meta_data = pd.read_pickle('{}/meta_data.pkl'.format(base_path), compression='gzip')
-            # TODO check validity of meta-data
-            return meta_data
+            
+            registered_fnames = set([f for f in meta_data.index])
+            loaded_fnames = set([f.split('/')[-1] for f in files])
+
+            if loaded_fnames == registered_fnames:
+                return meta_data
+            os.remove('{}/meta_data.pkl'.format(base_path))
+            print('regenerating meta_data file!')
     elif isinstance(files, (list, tuple)):
         base_path=None
         files = sorted(files)
@@ -145,7 +166,9 @@ def load_metadata(files):
     base_path = files
     if isinstance(files, (tuple, list)):
         base_path = ''
-    
+    else:
+        files = base_path = os.path.expanduser(base_path)
+
     return MetaDataContainer(base_path, get_metadata_frame(files))
 
 

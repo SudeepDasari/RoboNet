@@ -9,6 +9,10 @@ from tensorflow.contrib.training import HParams
 import logging
 from collections import OrderedDict
 from robonet.video_prediction import losses
+from robonet.video_prediction import metrics
+import pdb
+
+from robonet.video_prediction.models.deterministc_embedding_utils import onestep_encoder_fn, average_and_repeat, split_model_inference
 
 
 def loss_default_hparams(graph_class):
@@ -24,11 +28,15 @@ def loss_default_hparams(graph_class):
         'num_scales': 1,
         'vgg_cdist_weight': 0.0,
         'state_weight': 0.0,
-        'tv_weight': 0.001
+        'tv_weight': 0.001,
+        'zat_kl_weight': 0.0,
+        'action_weight': 0.0,
+        'zr_kl_weight': 0.0,
+        'batch_size':None
     }
 
 
-def vpred_generator(num_gpus, graph_type, inputs, targets, mode, params):
+def vpred_generator(num_gpus, graph_type, tpu_mode, model_inputs, model_targets, mode, params):
     # get graph class and setup default hyper-parameters
     logger = logging.getLogger(__name__)
     graph_class = get_graph_class(graph_type)
@@ -36,21 +44,45 @@ def vpred_generator(num_gpus, graph_type, inputs, targets, mode, params):
     hparams = HParams(**default_hparams).override_from_dict(params)
     
     # prep inputs here
-    inputs['actions'], inputs['images'] = tf.transpose(inputs['actions'], [1, 0, 2]), tf.transpose(inputs['images'], [1, 0, 2, 3, 4])
-    targets['images'] = tf.transpose(targets['images'][:, hparams.context_frames:], [1, 0, 2, 3, 4])
+    inputs, targets = {}, {}
+    inputs['actions'], inputs['images'] = tf.transpose(model_inputs['actions'], [1, 0, 2]), tf.transpose(model_inputs['images'], [1, 0, 2, 3, 4])
+    if mode == tf.estimator.ModeKeys.TRAIN:
+        targets['images'] = tf.transpose(model_targets['images'][:, hparams.context_frames:], [1, 0, 2, 3, 4])
+    
     if hparams.use_states:
-        inputs['states'] = tf.transpose(inputs['states'][:, hparams.context_frames:], [1, 0, 2])
-        if hparams.state_weight:
-            targets['states'] = tf.transpose(targets['state'], [1, 0, 2])
+        inputs['states'] = tf.transpose(model_inputs['states'][:, hparams.context_frames:], [1, 0, 2])
+        if hparams.state_weight and mode == tf.estimator.ModeKeys.TRAIN:
+            targets['states'] = tf.transpose(model_targets['state'], [1, 0, 2])
         else:
             logger.warning('states supplied but state_weight=0 so no loss will be computed on predicted states')
     elif hparams.state_weight > 0:
         raise ValueError("states not supplied but state_weight > 0")
+    
+    # if annotations are present construct 'pixel flow error metric'
+    if 'annotations' in model_inputs or 'pixel_distributions' in model_inputs:
+        if mode == tf.estimator.ModeKeys.TRAIN:
+            inputs['pix_distribs'] = tf.transpose(model_inputs['annotations'], [1, 0, 2, 3, 4])
+            targets['pix_distribs'] = tf.transpose(model_targets['annotations'][:, hparams.context_frames:], [1, 0, 2, 3, 4])
+        else:
+             inputs['pix_distribs'] = tf.transpose(model_inputs['pixel_distributions'], [1, 0, 2, 3, 4])
+
+    if 'encoder' in hparams and hparams.encoder == 'one_step':
+        assert mode == tf.estimator.ModeKeys.TRAIN
+        tlen = inputs['images'].get_shape().as_list()[0]
+        inputs_tr_inf, targets_tr_inf = split_model_inference(inputs, targets, hparams)
+        outputs_enc = onestep_encoder_fn(inputs_tr_inf['inference'], hparams)
+        hparams.e_dim = outputs_enc.get_shape().as_list()[2]
+        outputs_enc = average_and_repeat(outputs_enc, hparams, tlen)
+        inputs = inputs_tr_inf['train']
+        targets = targets_tr_inf['train']
+    else:
+        outputs_enc = None
 
     # build the graph
     model_graph = graph_class()
+
     if num_gpus == 1:
-        outputs = model_graph.build_graph(inputs, hparams)
+        outputs = model_graph.build_graph(mode, inputs, hparams, outputs_enc=outputs_enc)
     else:
         # TODO: add multi-gpu evaluation support
         raise NotImplementedError
@@ -60,10 +92,10 @@ def vpred_generator(num_gpus, graph_type, inputs, targets, mode, params):
     if mode == tf.estimator.ModeKeys.TRAIN:
         assert num_gpus == 1, "only single gpu training supported at the moment"
         global_step = tf.train.get_or_create_global_step()
-        optimizer = tf_utils.build_optimizer(hparams.lr, hparams.beta1, hparams.beta2, 
+        lr, optimizer = tf_utils.build_optimizer(hparams.lr, hparams.beta1, hparams.beta2, 
                                     decay_steps=hparams.decay_steps, 
                                     end_lr=hparams.end_lr,
-                                    global_step=global_step)[1]
+                                    global_step=global_step)
 
         gen_losses = OrderedDict()
         if not (hparams.l1_weight or hparams.l2_weight or hparams.vgg_cdist_weight):
@@ -72,13 +104,42 @@ def vpred_generator(num_gpus, graph_type, inputs, targets, mode, params):
         
         gen_images = outputs.get('gen_images_enc', outputs['gen_images'])
         target_images = targets['images']
+
+        scalar_summaries = {'learning_rate': lr}
+        tensor_summaries = {'pred_frames': pred_frames}
+
+        if 'encoder' in hparams and hparams.encoder == 'one_step':
+            tensor_summaries['inference_images'] = inputs_tr_inf['inference']['images']
+            tensor_summaries['pred_targets'] = target_images
+            tensor_summaries['pred_target_dists'] = targets_tr_inf['train']['pix_distribs']
+
+        if 'annotations' in model_inputs:
+            tensor_summaries['pred_distrib'] = tf.transpose(outputs['gen_pix_distribs'], [1, 0, 2, 3, 4])
+            expected_dist = metrics.expected_pixel_distance(targets['pix_distribs'], outputs['gen_pix_distribs'])
+            expected_square_dist = metrics.expected_square_pixel_distance(targets['pix_distribs'], outputs['gen_pix_distribs'])
+            var_dist = expected_square_dist - tf.square(expected_dist)
+            expected_dist, var_dist = [tf.reduce_sum(x, 0) for x in [expected_dist, var_dist]]
+
+            scalar_summaries['robot_pixel_distance'] = tf.reduce_mean(expected_dist[:, 0])
+            scalar_summaries['robot_pixel_var'] = tf.reduce_mean(var_dist[:, 0])
+            if expected_dist.get_shape().as_list()[-1] > 1:
+                for o in range(1, expected_dist.get_shape().as_list()[-1]):
+                    scalar_summaries['object{}_pixel_distance'.format(o)] = tf.reduce_mean(expected_dist[:, o])
+                    scalar_summaries['object{}_pixel_var'.format(o)] = tf.reduce_mean(var_dist[:, o])
+    
+        if 'ground_truth_sampling_mean' in outputs:
+            scalar_summaries['ground_truth_sampling_mean'] = outputs['ground_truth_sampling_mean']
         
         if hparams.l1_weight:
             gen_l1_loss = losses.l1_loss(gen_images, target_images)
             gen_losses["gen_l1_loss"] = (gen_l1_loss, hparams.l1_weight)
+            scalar_summaries['l1_loss'] = gen_l1_loss
+        
         if hparams.l2_weight:
             gen_l2_loss = losses.l2_loss(gen_images, target_images)
             gen_losses["gen_l2_loss"] = (gen_l2_loss, hparams.l2_weight)
+            scalar_summaries['l2_loss'] = gen_l2_loss
+
         if (hparams.l1_weight or hparams.l2_weight) and hparams.num_scales > 1:
             for i in range(1, hparams.num_scales):
                 scale_factor = 2 ** i
@@ -87,17 +148,25 @@ def vpred_generator(num_gpus, graph_type, inputs, targets, mode, params):
                 if hparams.l1_weight:
                     gen_l1_scale_loss = losses.l1_loss(gen_images_scale, target_images_scale)
                     gen_losses["gen_l1_scale%d_loss" % i] = (gen_l1_scale_loss, hparams.l1_weight)
+                    scalar_summaries['l1_loss_scale{}'.format(i)] = gen_l1_scale_loss
+
                 if hparams.l2_weight:
                     gen_l2_scale_loss = losses.l2_loss(gen_images_scale, target_images_scale)
                     gen_losses["gen_l2_scale%d_loss" % i] = (gen_l2_scale_loss, hparams.l2_weight)
+                    scalar_summaries['l2_loss_scale{}'.format(i)] = gen_l2_scale_loss
+            
         if hparams.vgg_cdist_weight:
             gen_vgg_cdist_loss = metrics.vgg_cosine_distance(gen_images, target_images)
             gen_losses['gen_vgg_cdist_loss'] = (gen_vgg_cdist_loss, hparams.vgg_cdist_weight)
+            scalar_summaries['vgg_cdist_loss'] = gen_vgg_cdist_loss
+
         if hparams.state_weight:
             gen_states = outputs.get('gen_states_enc', outputs['gen_states'])
             target_states = targets['states']
             gen_state_loss = losses.l2_loss(gen_states, target_states)
             gen_losses["gen_state_loss"] = (gen_state_loss, hparams.state_weight)
+            metric_summaries['state_loss'] = gen_state_loss
+
         if hparams.tv_weight:
             gen_flows = outputs.get('gen_flows_enc', outputs['gen_flows'])
             flow_diff1 = gen_flows[..., 1:, :, :, :] - gen_flows[..., :-1, :, :, :]
@@ -106,10 +175,18 @@ def vpred_generator(num_gpus, graph_type, inputs, targets, mode, params):
             gen_tv_loss = tf.reduce_mean(tf.reduce_sum(tf.abs(flow_diff1), axis=(-2, -1))) + \
                           tf.reduce_mean(tf.reduce_sum(tf.abs(flow_diff2), axis=(-2, -1)))
             gen_losses['gen_tv_loss'] = (gen_tv_loss, hparams.tv_weight)
+            scalar_summaries['tv_loss'] = gen_tv_loss
 
         loss = sum(loss * weight for loss, weight in gen_losses.values())
         g_gradvars = optimizer.compute_gradients(loss, var_list=model_graph.vars)
         g_train_op = optimizer.apply_gradients(g_gradvars, global_step=global_step)
-        return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=g_train_op, predictions=pred_frames)
-    # if test build the predictor
-    raise NotImplementedError
+
+        est = tf.estimator.EstimatorSpec(mode, loss=loss, train_op=g_train_op)
+        if tpu_mode:
+            return est
+        return est, scalar_summaries, tensor_summaries
+
+    ret_dict = {'predicted_frames': pred_frames[:, :, None]}
+    if 'gen_pix_distribs' in outputs:
+        ret_dict['predicted_pixel_distributions'] = tf.transpose(outputs['gen_pix_distribs'], [1, 0, 2, 3, 4])[:, :, None]
+    return ret_dict

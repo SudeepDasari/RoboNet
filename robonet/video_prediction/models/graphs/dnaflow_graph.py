@@ -6,7 +6,7 @@ from robonet.video_prediction.utils import tf_utils
 
 
 class DNAFlowGraphWrapper(BaseGraph):
-    def build_graph(self, inputs, hparams, scope_name='dnaflow_generator'):
+    def build_graph(self, mode, inputs, hparams, outputs_enc=None, scope_name='dnaflow_generator'):
         if hparams.use_states:
             assert "states" in inputs, "graph is building with states but no states in inptus"
         else:
@@ -17,9 +17,12 @@ class DNAFlowGraphWrapper(BaseGraph):
             # TODO: I really don't like this. Should just error at this point instead of padding
             inputs = {name: tf_utils.maybe_pad_or_slice(input, hparams.sequence_length - 1)
                 for name, input in inputs.items()}
-            
-            cell = VPredCell(inputs, hparams)
-            outputs, _ = tf.nn.dynamic_rnn(cell, inputs, dtype=tf.float32,
+
+            if outputs_enc is not None:
+                inputs['e'] = outputs_enc
+
+            cell = VPredCell(mode, inputs, hparams)
+            outputs, _ = tf.nn.dynamic_rnn(cell, inputs, dtype=inputs['actions'].dtype,
                                     swap_memory=False, time_major=True)
         
             outputs = {name: output[hparams.context_frames - 1:] for name, output in outputs.items()}
@@ -34,7 +37,6 @@ class DNAFlowGraphWrapper(BaseGraph):
     def default_hparams():
         default_params =  {
             "where_add": "all",
-            'ngf': 32,
             'last_frames': 2,
             'num_transformed_images': 4,
             'prev_image_background': True,
@@ -54,6 +56,13 @@ class DNAFlowGraphWrapper(BaseGraph):
             'schedule_sampling_k': 900.0,
             'schedule_sampling_steps': [0, 100000],
             
-            'renormalize_pixdistrib': True
+            'renormalize_pixdistrib': True,
+
+            # params below control size of model
+            'ngf': 32,
+            'encoder_layer_size_mult': [1, 2, 4],
+            'encoder_layer_use_rnn': [True, True, True],
+            'decoder_layer_size_mult': [2, 1, 1],
+            'decoder_layer_use_rnn': [True, True, False]
         }
         return dict(itertools.chain(BaseGraph.default_hparams().items(), default_params.items()))

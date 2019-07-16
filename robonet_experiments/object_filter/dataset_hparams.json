@@ -1,0 +1,7 @@
+{
+    "dataset": "AnnotatedRoboNet",
+    "buffer_size":256,
+    "load_T": 15,
+    "batch_size": [16],
+    "color_augmentation":0.1
+}

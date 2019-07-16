@@ -1,0 +1,12 @@
+{
+    "dataset": "RoboNet",
+    "buffer_size":256,
+    "load_T": 15,
+    "batch_size": [16],
+    "splits": [0.9, 0.05, 0.05],
+    "target_adim": 5,
+    "color_augmentation":0.1,
+    "action_mismatch": 1,
+    "state_mismatch": 1,
+    "robot_set": ["baxter", "franka", "sawyer"]
+}
