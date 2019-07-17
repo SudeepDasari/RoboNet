@@ -1,23 +1,41 @@
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import argparse
 from robonet.video_prediction.training import GIFLogger, get_trainable
-import json
-import os
 import tensorflow as tf
 import ray
 import ray.tune as tune
+import re, yaml, os, json
 
-import pdb
 
-def json_try_load(fname):
-    try:
-        return json.load(open(fname, 'r'))
-    except FileNotFoundError:
-        return {}
+def parse_config(config_file):
+    """
+    Configures custom yaml loading behavior and parses config file
+    """
+    search_pattern = re.compile(r".*search\/(.*?)\((.*?)\)", re.VERBOSE)
+    def search_constructor(loader, node):
+        value = loader.construct_scalar(node)
+        search_type, args = search_pattern.match(value).groups()
+        if search_type == 'grid':
+            return tune.grid_search(json.loads(args))
+        raise NotImplementedError("search {} is not implemented".format(search_type))
+    yaml.add_implicit_resolver("!custom_search", search_pattern, Loader=yaml.SafeLoader)
+    yaml.add_constructor('!custom_search', search_constructor, Loader=yaml.SafeLoader)
 
+    env_pattern = re.compile(r"\$\{(.*?)\}(.*)", re.VERBOSE)
+    def env_var_constructor(loader, node):
+        """
+        Converts ${VAR}/* from config file to 'os.environ[VAR] + *'
+        Modified from: https://www.programcreek.com/python/example/61563/yaml.add_implicit_resolver
+        """
+        value = loader.construct_scalar(node)
+        env_var, remainder = env_pattern.match(value).groups()
+        if env_var not in os.environ:
+            raise ValueError("config requires envirnonment variable {} which is not set".format(env_var))
+        return os.environ[env_var] + remainder
+    yaml.add_implicit_resolver("!env", env_pattern, Loader=yaml.SafeLoader)
+    yaml.add_constructor('!env', env_var_constructor, Loader=yaml.SafeLoader)
+
+    with open(config_file) as config:
+        return yaml.load(config, Loader=yaml.SafeLoader) 
 
 def trial_str_creator(trial):
     return "{}_{}".format(str(trial), trial.trial_id)
@@ -25,107 +43,45 @@ def trial_str_creator(trial):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--train_class', type=str, default='VPredTrainable', help='trainable type (specify for customizable train loop behavior)')
-    parser.add_argument("--input_dir", type=str, required=True, help="directory containing video prediction data")
-    parser.add_argument("--batchmix_basedata", type=str, default='', help="when finetuning via")
-    parser.add_argument("--upload_dir", type=str, default=None, help="if provided ray will sync files to given bucket dir")
-    parser.add_argument('--restore_dir', type=str, default='', help='ray will restore checkpoint and tensorboard events from given directory')
-    parser.add_argument('--experiment_dir', type=str, required=True, help='directory containing model and dataset hparams')
-    parser.add_argument('--name', type=str, default='', help='training experiment name')
-    parser.add_argument('--save_freq', type=int, default=10000, help="how frequently to save model weights")
-    parser.add_argument('--image_summary_freq', type=int, default=1000, help="how frequently to save image summaries")
-    parser.add_argument('--scalar_summary_freq', type=int, default=100, help="how frequently to take validation summaries")
-
-    parser.add_argument('--local_mode', action='store_true', help='runs ray in local mode if flag is supplied')
-    parser.add_argument('--cluster', action='store_true', help='runs ray in cluster mode (by supplying redis_address) if flag is supplied')
-    parser.add_argument('--no_resume', action='store_true', help='prevents ray from resuming (or restarting trials which crashed)')
-    parser.add_argument('--temp_dir', default=None, type=str, help="ray will log to this temp dir (instead /tmp/ray)")
-
-    parser.add_argument('--batch_size', type=int, nargs='+', default=[], help='batch size for model training (if list will grid search)')
-    parser.add_argument('--max_steps', type=int, nargs='+', default=[300000], help="maximum number of iterations to train for (if list will grid search)")
-    parser.add_argument('--train_frac', type=float, nargs='+', default=[0.9], help='fraction of data to use as training set (if list will grid search)')
-    parser.add_argument('--val_frac', type=float, nargs='+', default=[0.05], help='fraction of data to use as validation set (if list will grid search)')
-
-    parser.add_argument('--robot', type=str, default=[''], nargs='+', help="robot data to train on - set to 'all_balanced' for balanced_robots behavior (if list will grid search)")
-    parser.add_argument('--action_primitive', type=str, default='', help="if flag is supplied only trajectories with metadata['primitive']==action_primitive will be considered")
-    parser.add_argument('--filter_adim', type=int, default=0, help="if flag is supplied only trajectories with adim=filter_adim will be trained on")
-    parser.add_argument('--balance_robots', action='store_true', help='if flag is supplied batches will be balanced across robots')
+    parser.add_argument('experiment_file', type=str, help='path to YAML experiment config file')
+    parser.add_argument('--local_mode', action='store_true', help="if flag enables local_mode")
+    parser.add_argument('--cluster', action='store_true', help="if flag enables cluster mode")
+    parser.add_argument('--temp_dir', type=str, default=None, help="sets temp dir for ray redis (useful if permission error in /tmp/)")
+    parser.add_argument('--name', type=str, default=None, help="sets experiment name")
     args = parser.parse_args()
+    config = parse_config(args.experiment_file)
 
-    dataset_hparams = json_try_load(args.experiment_dir + '/dataset_hparams.json')
-    model_hparams = json_try_load(args.experiment_dir + '/model_hparams.json')
-    search_hparams = json_try_load(args.experiment_dir + '/search_hparams.json')
-    config_hparams = json_try_load(args.experiment_dir + '/trainable_config.json')
-
-    if 'batch_size' in dataset_hparams and args.batch_size:
-        raise ValueError
-    elif 'batch_size' in dataset_hparams:
-        args.batch_size = dataset_hparams.pop('batch_size')
-    assert args.batch_size, "batch size must be speciied!"
-
-    config = {'dataset_hparams': dataset_hparams,
-              'model_hparams': model_hparams,
-              'restore_dir': args.restore_dir,
-              'train_fraction': tune.grid_search(args.train_frac),
-              'batch_size': tune.grid_search(args.batch_size),
-              'val_fraction': tune.grid_search(args.val_frac),
-              'max_steps': tune.grid_search(args.max_steps),
-              'data_directory': args.input_dir,
-              'batchmix_basedata': args.batchmix_basedata,
-              'image_summary_freq': args.image_summary_freq,
-              'scalar_summary_freq': args.scalar_summary_freq,
-              'robot': tune.grid_search(args.robot),
-              'action_primitive': args.action_primitive,
-              'balance_across_robots': args.balance_robots,
-              'filter_adim': args.filter_adim}
-    train_class_name = config_hparams.pop('trainable_class', args.train_class)
-    for k, v in config_hparams.items():
-        config[k] = v
-        
-    assert not isinstance(dataset_hparams.get('held_out_robot', ''), (list, tuple)), "use search_hparams functionality now!"
+    redis_address, max_failures, local_mode = None, 3, False
+    resume = config.pop('resume', False)
+    if args.cluster or config.pop('cluster', False):
+        redis_address = ray.services.get_node_ip_address() + ':6379'
+        max_failures, resume = 20, True
+    elif args.local_mode or config.pop('local_mode', False):
+        local_mode = True
+        max_failures = 0
     
-    if 'robot_set' in dataset_hparams:
-        config['robot_set'] = dataset_hparams.pop('robot_set')
-    
-    for k, v in search_hparams.items():
-        dict_name, key = k.split('/')
-        search_params, search_type = v
-        assert search_type == 'grid_search', "only grid search is supported at the moment"
+    if args.temp_dir is None:
+        args.temp_dir = config.pop('temp_dir', None)
 
-        if dict_name == 'dataset_hparams':
-            dataset_hparams[key] =  tune.grid_search(search_params)
-        elif dict_name == 'model_hparams':
-            model_hparams[key] = tune.grid_search(search_params)
-        elif dict_name == 'config':
-            config[key] = tune.grid_search(search_params)
-        else:
-            raise ValueError
-
-    if not args.name:
-        args.name = "{}_video_prediction_training".format(os.getlogin())
+    if args.name is not None:
+        name = args.name
+        config.pop('name', None)
+    else:
+        name = config.pop('name', "{}_video_prediction_training".format(os.getlogin()))
 
     exp = tune.Experiment(
-                name=args.name,
-                run=get_trainable(train_class_name),
+                name=name,
+                run=get_trainable(config.pop('train_class')),
                 trial_name_creator=tune.function(trial_str_creator),
                 loggers=[GIFLogger],
-                config=config,
                 resources_per_trial= {"cpu": 1, "gpu": 1},
-                checkpoint_freq=args.save_freq,
-                upload_dir=args.upload_dir,
-                local_dir=os.environ.get('RAY_RESULTS', None)
+                checkpoint_freq=config.pop('save_freq', 5000),
+                upload_dir=config.pop('upload_dir', None),
+                local_dir=config.pop('local_dir', None),
+                config=config                                   # evaluate last to allow all popping above
     )
     
-    redis_address = None
-    if args.cluster:
-        redis_address = ray.services.get_node_ip_address() + ':6379'
-    ray.init(redis_address=redis_address, local_mode=args.local_mode, temp_dir=args.temp_dir)
-    
-    max_failures = 3
-    if args.cluster:
-        max_failures = 20
-
-    trials = tune.run(exp, queue_trials=True, resume=not args.no_resume,
-                    checkpoint_at_end=True, max_failures=max_failures,
-                    )
+    ray.init(redis_address=redis_address, local_mode=local_mode, temp_dir=args.temp_dir)
+    trials = tune.run(exp, queue_trials=True, resume=resume,
+                      checkpoint_at_end=True, max_failures=max_failures)
     exit(0)

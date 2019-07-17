@@ -1,0 +1,23 @@
+# example configuration file for training a set of video prediction model on sawyer data from RoboNet
+# each model is trained on a different fraction of data
+
+# general experiment configurations
+train_class: VPredTrainable
+data_directory: ${DATA_DIR}/hdf5
+robot: sawyer
+max_steps: 300000
+filter_adim: 4
+train_fraction: search/grid([0.9, 0.1, 0.01, 0.001])
+batch_size: 16
+
+# dataset_hparams used to initialize dataset object
+dataset_hparams:
+  dataset: "RoboNet"
+  buffer_size: 10
+  load_T: 15
+  color_augmentation: 0.1
+
+# model_hparams used to create graph and loss function
+model_hparams:
+  model: deterministic
+  graph_type: c_dna_flow
