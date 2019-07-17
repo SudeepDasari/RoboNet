@@ -1,4 +1,0 @@
-{
-    "config/held_out_robot": [["baxter", "widowx"], "grid_search"],
-    "model_hparams/ngf": [[32, 64], "grid_search"]
-}

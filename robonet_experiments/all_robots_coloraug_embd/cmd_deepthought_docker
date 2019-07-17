@@ -1,1 +1,0 @@
- python scripts/train_vpred.py --input_dir /parent/nfs/kun1/users/sudeep/hdf5_new_fields --train_class RobotSetFilter   --experiment_dir robonet_experiments/all_robots_coloraug_embd/ --no_resume --local_mode --name all_robots_coloraug_embed --balance_robots --restore_dir /parent/nfs/kun1/users/febert/data/ray_results/all_robots_coloraug_embed/run/checkpoint_110000s

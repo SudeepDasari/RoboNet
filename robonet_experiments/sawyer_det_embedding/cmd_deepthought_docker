@@ -1,1 +1,0 @@
-python scripts/train_vpred.py --input_dir /parent/raid/sudeep/robonet_dataset/hdf5_new_fields --experiment_dir robonet_experiments/sawyer_det_embedding --no_resume --local_mode --robot sawyer --train_class BalancedCamFilter --name febert

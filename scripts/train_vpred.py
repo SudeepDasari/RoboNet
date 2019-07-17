@@ -37,6 +37,7 @@ def parse_config(config_file):
     with open(config_file) as config:
         return yaml.load(config, Loader=yaml.SafeLoader) 
 
+
 def trial_str_creator(trial):
     return "{}_{}".format(str(trial), trial.trial_id)
 

@@ -1,5 +1,0 @@
-{
-    "trainable_class": "RobotObjectFilter",
-    "target_robot": "widowx", 
-    "removed_object": "cloth"
-}
