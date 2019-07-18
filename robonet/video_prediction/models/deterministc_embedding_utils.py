@@ -1,4 +1,6 @@
 """
+TODO: use self._data_hparams instead of hacking batch_size/sub_batch_size into the model_hparams
+
 Boiled down version of SAVP model from https://github.com/alexlee-gk/video_prediction
 """
 import itertools
@@ -11,25 +13,7 @@ from collections import OrderedDict
 from robonet.video_prediction import losses
 from robonet.video_prediction.ops import lrelu, dense, pad2d, conv2d, conv_pool2d, flatten, tile_concat, pool2d, get_norm_layer
 from tensorflow.python.util import nest
-from robonet.video_prediction.models.stochastic_generator import create_n_layer_encoder
-import pdb
-
-def loss_default_hparams(graph_class):
-    return {
-        "lr": 0.001,
-        "end_lr": 0.0,
-        "decay_steps": (200000, 300000),
-        "max_steps": 300000,
-        "beta1": 0.9,
-        "beta2": 0.999,
-        'l1_weight': 1.0,
-        'l2_weight': 0.0,
-        'num_scales': 1,
-        'vgg_cdist_weight': 0.0,
-        'state_weight': 0.0,
-        'tv_weight': 0.001,
-        'action_weight': 0.0,
-    }
+from robonet.video_prediction.layers.encoder_layers import create_n_layer_encoder
 
 
 def onestep_encoder_fn(targets, hparams=None):

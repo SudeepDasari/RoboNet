@@ -2,7 +2,7 @@ from ray.tune import Trainable
 import pdb
 import tensorflow as tf
 from robonet.datasets import get_dataset_class, load_metadata
-from robonet.video_prediction.models import get_model_fn
+from robonet.video_prediction.models import get_model
 from robonet.video_prediction.utils import tf_utils
 import numpy as np
 import os
@@ -17,11 +17,12 @@ class VPredTrainable(Trainable):
     def _setup(self, config):
         # run hparams are passed in through config dict
         self.dataset_hparams, self.model_hparams, self._hparams = self._extract_hparams(config)
-        model_fn = get_model_fn(self.model_hparams.pop('model'))
         inputs, targets = self._make_dataloaders(config)
 
-        self._estimator, self._scalar_metrics, self._tensor_metrics = model_fn(self._hparams.n_gpus, self._hparams.graph_type, 
-                                                    False, inputs, targets, tf.estimator.ModeKeys.TRAIN, self.model_hparams)
+        PredictionModel = get_model(self.model_hparams.pop('model'))
+        model = PredictionModel(self._data_loader.hparams, self._hparams.n_gpus, self._hparams.graph_type, False)
+        est, s_m, t_m = model.model_fn(inputs, targets, tf.estimator.ModeKeys.TRAIN, self.model_hparams)
+        self._estimator, self._scalar_metrics, self._tensor_metrics = est, s_m, t_m
         parameter_count = tf.reduce_sum([tf.reduce_prod(tf.shape(v)) for v in tf.trainable_variables()])
 
         self._global_step = tf.train.get_or_create_global_step()
@@ -37,6 +38,63 @@ class VPredTrainable(Trainable):
     
         print("parameter_count =", self.sess.run(parameter_count))
 
+    def _default_hparams(self):
+        default_dict = {
+            'batch_size': 16,
+            'restore_dir': '',
+            'n_gpus': 1,
+            'pad_amount': 2,
+            'scalar_summary_freq': 100,
+            'image_summary_freq': 1000,
+            'train_fraction': 0.9,
+            'val_fraction': 0.05,
+            'max_to_keep': 3,
+            'max_steps': 300000,
+        }
+        return HParams(**default_dict)
+
+    def _extract_hparams(self, config):
+        """
+        Grabs and (optionally) modifies hparams
+        """
+        self._batch_config = config.pop('batch_config')
+        dataset_hparams, model_hparams = config.pop('loader_hparams', {}), config.pop('model_hparams', {})
+        hparams = self._default_hparams().override_from_dict(config)
+        hparams.graph_type = model_hparams.pop('graph_type')                      # required key which tells model which graph to load
+        assert hparams.max_steps > 0, "max steps must be positive!"
+
+        if 'splits' not in dataset_hparams:
+            dataset_hparams['splits'] = [hparams.train_fraction, hparams.val_fraction, 1 - hparams.val_fraction - hparams.train_fraction]
+            assert all([x >= 0 for x in dataset_hparams['splits']]), "invalid train/val fractions!"
+
+        if 'sequence_length' in model_hparams and 'load_T' not in dataset_hparams:
+            dataset_hparams['load_T'] = model_hparams['sequence_length'] + 1
+        
+        return dataset_hparams, model_hparams, hparams
+
+    def _get_input_targets(self, DatasetClass, metadata, dataset_hparams):
+        data_loader = DatasetClass(self._hparams.batch_size, metadata, dataset_hparams)
+        assert data_loader.hparams.get('load_random_cam', False), "function assumes loader will grab one random camera feed in multi-cam object"
+
+        tensor_names = ['actions', 'images', 'states']
+        if 'annotations' in data_loader:
+            tensor_names = ['actions', 'images', 'states', 'annotations']
+
+        self._tensor_multiplexer = MultiplexedTensors(data_loader, tensor_names)
+        loaded_tensors = [self._tensor_multiplexer[k] for k in tensor_names]
+        
+        self._real_annotations = None
+        self._real_images = loaded_tensors[1] = loaded_tensors[1][:, :, 0]              # grab cam 0 for images
+        if 'annotations' in data_loader:
+            self._real_annotations = loaded_tensors[3] = loaded_tensors[3][:, :, 0]     # grab cam 0 for annotations
+        
+        inputs, targets = {'actions': loaded_tensors[0]}, {}
+        for k, v in zip(tensor_names[1:], loaded_tensors[1:]):
+            inputs[k], targets[k] = v[:, :-1], v
+
+        self._data_loader = data_loader
+        return inputs, targets
+    
     def _make_dataloaders(self, config):
         DatasetClass = get_dataset_class(self.dataset_hparams.pop('dataset'))
         sources, self.dataset_hparams['source_selection_probabilities'] = self._init_sources()
@@ -44,6 +102,13 @@ class VPredTrainable(Trainable):
         inputs, targets = self._get_input_targets(DatasetClass, sources, self.dataset_hparams)
         return inputs, targets
     
+    def _default_source_hparams(self):
+        return {
+            'data_directory': './',
+            'source_prob': None,
+            'balance_by_attribute': ['robot']             # split data source into multiple sources where for each source meta[attr] == a, (e.g all examples in one source come from a specific robot)
+        }
+
     def _init_sources(self):
         loaded_metadata = {}
         sources, source_probs = [], []
@@ -97,72 +162,6 @@ class VPredTrainable(Trainable):
             source_probs = None
 
         return sources, source_probs
-
-    def _extract_hparams(self, config):
-        """
-        Grabs and (optionally) modifies hparams
-        """
-        self._batch_config = config.pop('batch_config')
-        dataset_hparams, model_hparams = config.pop('loader_hparams', {}), config.pop('model_hparams', {})
-        if 'sub_batch_size' in dataset_hparams:
-            model_hparams['sub_batch_size'] = dataset_hparams['sub_batch_size']
-        hparams = self._default_hparams().override_from_dict(config)
-        model_hparams['batch_size'] = hparams.batch_size
-        hparams.graph_type = model_hparams.pop('graph_type')                      # required key which tells model which graph to load
-        assert hparams.max_steps > 0, "max steps must be positive!"
-
-        if 'splits' not in dataset_hparams:
-            dataset_hparams['splits'] = [hparams.train_fraction, hparams.val_fraction, 1 - hparams.val_fraction - hparams.train_fraction]
-            assert all([x >= 0 for x in dataset_hparams['splits']]), "invalid train/val fractions!"
-
-        if 'sequence_length' in model_hparams and 'load_T' not in dataset_hparams:
-            dataset_hparams['load_T'] = model_hparams['sequence_length'] + 1
-        
-        return dataset_hparams, model_hparams, hparams
-    
-    def _default_hparams(self):
-        default_dict = {
-            'batch_size': 16,
-            'restore_dir': '',
-            'n_gpus': 1,
-            'pad_amount': 2,
-            'scalar_summary_freq': 100,
-            'image_summary_freq': 1000,
-            'train_fraction': 0.9,
-            'val_fraction': 0.05,
-            'max_to_keep': 3,
-            'max_steps': 300000,
-        }
-        return HParams(**default_dict)
-
-    def _default_source_hparams(self):
-        return {
-            'data_directory': './',
-            'source_prob': None,
-            'balance_by_attribute': ['robot']             # split data source into multiple sources where for each source meta[attr] == a, (e.g all examples in one source come from a specific robot)
-        }
-
-    def _get_input_targets(self, DatasetClass, metadata, dataset_hparams):
-        data_loader = DatasetClass(self._hparams.batch_size, metadata, dataset_hparams)
-        assert data_loader.hparams.get('load_random_cam', False), "function assumes loader will grab one random camera feed in multi-cam object"
-
-        tensor_names = ['actions', 'images', 'states']
-        if 'annotations' in data_loader:
-            tensor_names = ['actions', 'images', 'states', 'annotations']
-
-        self._tensor_multiplexer = MultiplexedTensors(data_loader, tensor_names)
-        loaded_tensors = [self._tensor_multiplexer[k] for k in tensor_names]
-        
-        self._real_annotations = None
-        self._real_images = loaded_tensors[1] = loaded_tensors[1][:, :, 0]              # grab cam 0 for images
-        if 'annotations' in data_loader:
-            self._real_annotations = loaded_tensors[3] = loaded_tensors[3][:, :, 0]     # grab cam 0 for annotations
-        
-        inputs, targets = {'actions': loaded_tensors[0]}, {}
-        for k, v in zip(tensor_names[1:], loaded_tensors[1:]):
-            inputs[k], targets[k] = v[:, :-1], v
-
-        return inputs, targets
 
     def _train(self):
         itr = self.iteration

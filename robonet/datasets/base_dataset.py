@@ -83,7 +83,7 @@ class BaseVideoDataset(object):
 
     @property
     def hparams(self):
-        return self._hparams.values()
+        return copy.deepcopy(self._hparams)
 
     @property
     def num_examples_per_epoch(self):

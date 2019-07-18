@@ -4,7 +4,7 @@
 # general experiment configurations
 batch_size: 16
 train_class: VPredTrainable 
-restore_dir: ${RESTORE_DIR}
+# restore_dir: ${RESTORE_DIR}
 max_steps: 300000
 
 # list of dictionaries containing data sources along with filter parameters
