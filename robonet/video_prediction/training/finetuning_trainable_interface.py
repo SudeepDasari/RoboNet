@@ -13,8 +13,6 @@ class BatchmixingVPredTrainable(VPredTrainable):
         return params
 
     def make_dataloaders(self,  config):
-        self._real_images = []
-
         DatasetClass = get_dataset_class(self.dataset_hparams.pop('dataset'))
 
         # data from new domain

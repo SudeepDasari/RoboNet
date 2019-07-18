@@ -18,13 +18,11 @@ class VPredTrainable(Trainable):
         # run hparams are passed in through config dict
         self.dataset_hparams, self.model_hparams, self._hparams = self._extract_hparams(config)
         model_fn = get_model_fn(self.model_hparams.pop('model'))
+        inputs, targets = self._make_dataloaders(config)
 
-        inputs, targets = self.make_dataloaders(config)
-
-        self._real_images = tf.concat(self._real_images, axis=0)
         self._estimator, self._scalar_metrics, self._tensor_metrics = model_fn(self._hparams.n_gpus, self._hparams.graph_type, 
                                                     False, inputs, targets, tf.estimator.ModeKeys.TRAIN, self.model_hparams)
-        self._parameter_count = parameter_count = tf.reduce_sum([tf.reduce_prod(tf.shape(v)) for v in tf.trainable_variables()])
+        parameter_count = tf.reduce_sum([tf.reduce_prod(tf.shape(v)) for v in tf.trainable_variables()])
 
         self._global_step = tf.train.get_or_create_global_step()
         self.saver = tf.train.Saver(max_to_keep=self._hparams.max_to_keep)
@@ -39,18 +37,73 @@ class VPredTrainable(Trainable):
     
         print("parameter_count =", self.sess.run(parameter_count))
 
-    def make_dataloaders(self, config):
+    def _make_dataloaders(self, config):
         DatasetClass = get_dataset_class(self.dataset_hparams.pop('dataset'))
-        metadata = self._filter_metadata(load_metadata(config['data_directory']))
-        self._real_images = []
-        inputs, targets = self._get_input_targets(DatasetClass, metadata, self.dataset_hparams)
+        sources, self.dataset_hparams['source_selection_probabilities'] = self._init_sources()
+        
+        inputs, targets = self._get_input_targets(DatasetClass, sources, self.dataset_hparams)
         return inputs, targets
+    
+    def _init_sources(self):
+        loaded_metadata = {}
+        sources, source_probs = [], []
+
+        for source in self._batch_config:
+            source_hparams = self._default_source_hparams()
+            source_hparams.update(source)
+            dir_path = os.path.realpath(os.path.expanduser(source_hparams['data_directory']))
+            meta_data = loaded_metadata[dir_path] = loaded_metadata.get(dir_path, load_metadata(dir_path))
+            
+            for k, v in source_hparams.items():
+                if k not in self._default_source_hparams():
+                    if k == 'object_classes':
+                        meta_data = meta_data.select_objects(v)
+                    elif isinstance(v, (list, tuple)):
+                        meta_data = meta_data[meta_data[k].frame.isin(v)]
+                    else:
+                        meta_data = meta_data[meta_data[k] == v]
+                    assert len(meta_data), "filters created empty data source!"
+            
+            if source_hparams['balance_by_attribute']:
+                meta_data = [meta_data]
+                for k in source_hparams['balance_by_attribute']:
+                    new_data = []
+                    for m in meta_data:
+                        unique_elems = m[k].frame.unique().tolist()
+                        new_data.extend([m[m[k] == u] for u in unique_elems])
+                    meta_data = new_data
+                
+                if source_hparams['source_prob']:
+                    new_prob = source_hparams['source_prob'] / float(len(meta_data))
+                    source_hparams['source_prob'] = [new_prob for _ in range(len(meta_data))]
+                else:
+                    source_hparams['source_prob'] = [None for _ in range(len(meta_data))]
+                
+                sources.extend(meta_data)
+                source_probs.extend(source_hparams['source_prob'])
+            else:
+                source_probs.append(source_hparams['source_prob'])
+                sources.append(meta_data)
+
+        if any([s is not None for s in source_probs]):
+            set_probs = [s for s in source_probs if s is not None]
+            assert all([0 <= s <= 1 for s in set_probs]) and sum(set_probs) <= 1, "invalid probability distribution!"
+            if len(set_probs) != len(source_probs):
+                remainder_prob = (1.0 - sum(set_probs)) / (len(source_probs) - len(set_probs))
+                for i in range(len(source_probs)):
+                    if source_probs[i] is None:
+                        source_probs[i] = remainder_prob
+        else:
+            source_probs = None
+
+        return sources, source_probs
 
     def _extract_hparams(self, config):
         """
         Grabs and (optionally) modifies hparams
         """
-        dataset_hparams, model_hparams = config.pop('dataset_hparams', {}), config.pop('model_hparams', {})
+        self._batch_config = config.pop('batch_config')
+        dataset_hparams, model_hparams = config.pop('loader_hparams', {}), config.pop('model_hparams', {})
         if 'sub_batch_size' in dataset_hparams:
             model_hparams['sub_batch_size'] = dataset_hparams['sub_batch_size']
         hparams = self._default_hparams().override_from_dict(config)
@@ -71,7 +124,6 @@ class VPredTrainable(Trainable):
         default_dict = {
             'batch_size': 16,
             'restore_dir': '',
-            'data_directory': './',
             'n_gpus': 1,
             'pad_amount': 2,
             'scalar_summary_freq': 100,
@@ -79,44 +131,16 @@ class VPredTrainable(Trainable):
             'train_fraction': 0.9,
             'val_fraction': 0.05,
             'max_to_keep': 3,
-            'robot': '',
-            'held_out_robot': '',
-            'action_primitive': '',
-            'filter_adim': 0,
             'max_steps': 300000,
-            'balance_across_robots': False,
-            'batchmix_basedata':''
         }
         return HParams(**default_dict)
 
-    def _filter_metadata(self, metadata):
-        """
-        filters metadata based on configuration file
-            - overwrite/modify for more expressive data loading
-        """
-        if self._hparams.held_out_robot:
-            metadata = metadata[metadata['robot'] != self._hparams.held_out_robot]
-        if self._hparams.action_primitive:
-            metadata = metadata[metadata['primitives'] == self._hparams.action_primitive]
-        if self._hparams.filter_adim:
-            metadata = metadata[metadata['adim'] == self._hparams.filter_adim]
-
-        if self._hparams.balance_across_robots or self._hparams.robot == 'all_balanced':
-            assert not self._hparams.robot or self._hparams.robot == 'all_balanced', "can't balance across one robot!"
-            unique_robots = metadata['robot'].frame.unique().tolist()
-            all_metadata = metadata
-            metadata = [all_metadata[all_metadata['robot'] == r] for r in unique_robots]
-        elif self._hparams.robot:
-            metadata = metadata[metadata['robot'] == self._hparams.robot]
-
-        if 'train_ex_per_source' in self.dataset_hparams:
-            if not isinstance(self.dataset_hparams['train_ex_per_source'], list):
-                print('train_ex_per_source is not a list! Automatically broadcasting...')
-                if isinstance(metadata, list):
-                    self.dataset_hparams['train_ex_per_source'] = [self.dataset_hparams['train_ex_per_source'] for _ in range(len(metadata))]
-                else:
-                    self.dataset_hparams['train_ex_per_source'] = [self.dataset_hparams['train_ex_per_source']]
-        return metadata
+    def _default_source_hparams(self):
+        return {
+            'data_directory': './',
+            'source_prob': None,
+            'balance_by_attribute': ['robot']             # split data source into multiple sources where for each source meta[attr] == a, (e.g all examples in one source come from a specific robot)
+        }
 
     def _get_input_targets(self, DatasetClass, metadata, dataset_hparams):
         data_loader = DatasetClass(self._hparams.batch_size, metadata, dataset_hparams)
@@ -132,8 +156,7 @@ class VPredTrainable(Trainable):
         self._real_annotations = None
         self._real_images = loaded_tensors[1] = loaded_tensors[1][:, :, 0]              # grab cam 0 for images
         if 'annotations' in data_loader:
-            loaded_tensors[3] = loaded_tensors[3][:, :, 0]                              # grab cam 0 for annotations
-            self._real_annotations = loaded_tensors[3]
+            self._real_annotations = loaded_tensors[3] = loaded_tensors[3][:, :, 0]     # grab cam 0 for annotations
         
         inputs, targets = {'actions': loaded_tensors[0]}, {}
         for k, v in zip(tensor_names[1:], loaded_tensors[1:]):

@@ -20,6 +20,11 @@ def _load_data(inputs):
 
 
 class RoboNetDataset(BaseVideoDataset):
+    def __init__(self, batch_size, dataset_files_or_metadata, hparams=dict()):
+        source_probs = hparams.pop('source_selection_probabilities', None)
+        super(RoboNetDataset, self).__init__(batch_size, dataset_files_or_metadata, hparams)
+        self._hparams.source_probs = source_probs
+
     def _init_dataset(self):
         if self._hparams.load_random_cam and self._hparams.same_cam_across_sub_batch:
             for s in self._metadata:
@@ -141,8 +146,11 @@ class RoboNetDataset(BaseVideoDataset):
             b = 0
             sources_selected_thus_far = []
             while len(file_names) < self._batch_size:
+                # if source_probs is set do a weighted random selection
+                if self._hparams.source_probs:
+                    selected_source = self._np_rng.choice(len(sources), 1, p=self._hparams.source_probs)[0]
                 # if # sources <= # sub_batches then sample each source at least once per batch
-                if len(sources) <= self._batch_size // self._hparams.sub_batch_size and b // self._hparams.sub_batch_size < len(sources):
+                elif len(sources) <= self._batch_size // self._hparams.sub_batch_size and b // self._hparams.sub_batch_size < len(sources):
                     selected_source = b // self._hparams.sub_batch_size
                 elif len(sources) > self._batch_size // self._hparams.sub_batch_size:
                     selected_source = rng.randint(0, len(sources) - 1)

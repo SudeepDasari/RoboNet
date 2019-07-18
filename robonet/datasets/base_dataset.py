@@ -5,6 +5,7 @@ import glob
 import copy
 from .util.metadata_helper import load_metadata, MetaDataContainer
 import random
+import numpy as np
 
 
 class BaseVideoDataset(object):
@@ -39,7 +40,8 @@ class BaseVideoDataset(object):
             if k == 'train' and self._hparams.use_random_train_seed:
                 seed = None
             self._random_generator[k] = random.Random(seed)
-        
+        self._np_rng = np.random.RandomState(self._random_generator['base'].getrandbits(32))
+
         #initialize dataset
         self._num_ex_per_epoch = self._init_dataset()
         print('loaded {} train files'.format(self._num_ex_per_epoch))

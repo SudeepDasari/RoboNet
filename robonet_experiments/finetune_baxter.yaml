@@ -9,9 +9,15 @@ train_fraction: search/grid([0.9, 0.1, 0.01, 0.001])
 
 # list of dictionaries containing data sources along with filter parameters
 batch_config:
-  # selects sawyer data with autograsp enabled (adim=4, robot=sawyer)
+  # selects newly colleced baxter data for finetuning
+  # note there is a 50% chance to select the new cloth data and a 50% chance to sample from one of the pretraining sources
+  - data_directory: ${DATA_DIR}/baxter_cloth
+    source_prob: 0.5
+
+  # selects non-baxter data with autograsp enabled
+  # source _prob need not be set here - code will automatically set it to 1 - 0.5 (from above)
   - data_directory: ${DATA_DIR}/hdf5
-    robot: "sawyer"
+    robot: ["sawyer", "widowx", "franka"]
     adim: 4
 
 # loader_hparams used to initialize loader object
