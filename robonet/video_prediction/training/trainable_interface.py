@@ -68,7 +68,7 @@ class VPredTrainable(Trainable):
             assert all([x >= 0 for x in dataset_hparams['splits']]), "invalid train/val fractions!"
 
         if 'sequence_length' in model_hparams and 'load_T' not in dataset_hparams:
-            dataset_hparams['load_T'] = model_hparams['sequence_length'] + 1
+            dataset_hparams['load_T'] = model_hparams['sequence_length']
         
         return dataset_hparams, model_hparams, hparams
 
@@ -168,7 +168,6 @@ class VPredTrainable(Trainable):
         
         # no need to increment itr since global step is incremented by train_op
         loss, train_op = self._estimator.loss, self._estimator.train_op
-        
         fetches = {'global_step': itr}
 
         start = time.time()

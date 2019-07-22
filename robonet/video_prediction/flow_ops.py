@@ -11,6 +11,8 @@ def image_warp(im, flow):
         warped: transformed image of the same shape as the input image.
 
     Implementation taken from here: https://github.com/simonmeister/UnFlow
+
+    maybe swap to # tf.contrib.image.dense_image_warp 
     """
     with tf.variable_scope('image_warp'):
 

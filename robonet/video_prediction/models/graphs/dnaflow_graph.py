@@ -6,13 +6,14 @@ from robonet.video_prediction.utils import tf_utils
 
 
 class DNAFlowGraphWrapper(BaseGraph):
-    def build_graph(self, mode, inputs, hparams, outputs_enc=None, scope_name='dnaflow_generator'):
+    def build_graph(self, mode, inputs, hparams, scope_name='dnaflow_generator'):
         if hparams.use_states:
             assert "states" in inputs, "graph is building with states but no states in inptus"
         else:
             inputs.pop('states', None)
         
         self._scope_name = scope_name
+        outputs_enc = inputs.pop('outputs_enc', None)
         with tf.variable_scope(self._scope_name) as graph_scope:
             # TODO: I really don't like this. Should just error at this point instead of padding
             inputs = {name: tf_utils.maybe_pad_or_slice(input, hparams.sequence_length - 1)
@@ -28,10 +29,6 @@ class DNAFlowGraphWrapper(BaseGraph):
             outputs = {name: output[hparams.context_frames - 1:] for name, output in outputs.items()}
             outputs['ground_truth_sampling_mean'] = tf.reduce_mean(tf.to_float(cell.ground_truth[hparams.context_frames:]))
         return outputs
-
-    @property
-    def vars(self):
-        return tf.trainable_variables(self._scope_name)
 
     @staticmethod
     def default_hparams():

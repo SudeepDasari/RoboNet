@@ -8,11 +8,12 @@ from robonet.video_prediction.layers.deterministic_embedding_rnn_cell import Det
 import pdb
 
 class DeterministicWrapper(BaseGraph):
-    def build_graph(self, mode, inputs, hparams, outputs_enc=None, scope_name='dnaflow_generator'):
+    def build_graph(self, mode, inputs, hparams, scope_name='dnaflow_generator'):
         if hparams.use_states:
             assert "states" in inputs, "graph is building with states but no states in inptus"
         else:
             inputs.pop('states', None)
+        outputs_enc = inputs.pop('outputs_enc', None)
         
         self._scope_name = scope_name
         with tf.variable_scope(self._scope_name) as graph_scope:

@@ -1,3 +1,6 @@
+import tensorflow as tf
+
+
 class BaseGraph:
     def build_graph(self, inputs, hparams, scope_name='graph'):
         raise NotImplementedError
@@ -12,4 +15,5 @@ class BaseGraph:
 
     @property
     def vars(self):
-        raise NotImplementedError
+        return tf.trainable_variables(self._scope_name)
+

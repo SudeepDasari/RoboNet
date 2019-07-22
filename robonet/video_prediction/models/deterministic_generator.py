@@ -62,12 +62,13 @@ class DeterministicModel(BaseModel):
             targets = targets_tr_inf['train']
         else:
             outputs_enc = None
+        inputs['outputs_enc'] = outputs_enc
 
         # build the graph
         model_graph = self._graph_class()
 
         if self._num_gpus == 1:
-            outputs = model_graph.build_graph(mode, inputs, self._hparams, outputs_enc=outputs_enc)
+            outputs = model_graph.build_graph(mode, inputs, self._hparams)
         else:
             # TODO: add multi-gpu support
             raise NotImplementedError
@@ -163,6 +164,8 @@ class DeterministicModel(BaseModel):
                 scalar_summaries['tv_loss'] = gen_tv_loss
 
             loss = sum(loss * weight for loss, weight in gen_losses.values())
+
+            print('computing gradient and train_op')
             g_gradvars = optimizer.compute_gradients(loss, var_list=model_graph.vars)
             g_train_op = optimizer.apply_gradients(g_gradvars, global_step=global_step)
 
