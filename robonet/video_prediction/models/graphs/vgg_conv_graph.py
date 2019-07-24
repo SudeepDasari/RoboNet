@@ -71,11 +71,6 @@ class VGGConvGraph(BaseGraph):
                 if t < hparams.context_frames - 1:   # no frame predictions for extra context frames
                     continue
                 
-                if hparams.use_flows:
-                    decoder_out = dec_lstm_out + encoded_imgs
-                else:
-                    decoder_out = tf.concat((dec_lstm_out, encoded_imgs), -1)
-                
                 for op in self._dec_ops:
                     decoder_out = op(decoder_out)
                     if isinstance(op, layers.Conv2D):
