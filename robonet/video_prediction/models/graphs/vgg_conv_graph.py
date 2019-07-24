@@ -71,6 +71,7 @@ class VGGConvGraph(BaseGraph):
                 if t < hparams.context_frames - 1:   # no frame predictions for extra context frames
                     continue
                 
+                decoder_out = dec_lstm_out
                 for op in self._dec_ops:
                     decoder_out = op(decoder_out)
                     if isinstance(op, layers.Conv2D):
