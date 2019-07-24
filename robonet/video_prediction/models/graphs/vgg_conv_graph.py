@@ -18,6 +18,7 @@ class VGGConvGraph(BaseGraph):
             enc_lstm_state, dec_lstm_state = None, None
             previous_encs = []
             outputs = {}
+
             for t in range(hparams.sequence_length - 1):
                 norm_ctr = 0
                 print('building graph for t={}'.format(t), end="\r")
@@ -26,18 +27,23 @@ class VGGConvGraph(BaseGraph):
                     input_image = inputs['images'][t]
                 else:
                     input_image = tf.where(self._ground_truth[t], inputs['images'][t], outputs['gen_images'][-1])
-                
-                # encode actions (to append to image frame)
-                img_append = tf.reshape(self._img_append(action_state_vector), (B, 2, W, C))
 
                 # encoder convs
-                encoded_imgs = tf.concat((input_image, img_append), axis=1)
+                encoded_imgs = input_image
                 for i, op in enumerate(self._enc_ops):
                     encoded_imgs = op(encoded_imgs)
                     if isinstance(op, layers.Conv2D):
                         encoded_imgs = tf.contrib.layers.instance_norm(encoded_imgs, activation_fn=tf.nn.relu, 
                                                                         scope='norm{}'.format(norm_ctr), reuse = t > 0)
                         norm_ctr += 1
+
+                # encode actions and append to hidden state
+                enc_append = tf.reshape(self._enc_append(action_state_vector), (B, int(H // 8), int(W // 8), 
+                                        hparams.action_append_channels))
+                encoded_imgs = self._enc_conv(tf.concat((encoded_imgs, enc_append), -1))
+                encoded_imgs = tf.contrib.layers.instance_norm(encoded_imgs, activation_fn=tf.nn.relu, 
+                                                                scope='norm{}'.format(norm_ctr), reuse = t > 0)
+                norm_ctr += 1
 
                 # encoder lstm cell
                 if t == 0:
@@ -54,7 +60,7 @@ class VGGConvGraph(BaseGraph):
                     dot_prods = [tf.reduce_sum(flatten_enc * x, 1, keepdims=True) for x in previous_encs]
                     attention_weights = tf.nn.softmax(tf.concat(dot_prods, axis=1), axis=1)
                     attention_enc = tf.reduce_sum(attention_weights[:, :, None] * tf.concat([p[:, None] for p in previous_encs], 1), 1)
-                    attention_enc = tf.reshape(attention_enc, [B, int((H + 2) // 8), int(W // 8), hparams.lstm_filters[0]])
+                    attention_enc = tf.reshape(attention_enc, [B, int(H // 8), int(W // 8), hparams.lstm_filters])
                 
                 # decoder lstm cell
                 if t == 0:
@@ -64,7 +70,12 @@ class VGGConvGraph(BaseGraph):
                 # decoder convs
                 if t < hparams.context_frames - 1:   # no frame predictions for extra context frames
                     continue
-                decoder_out = dec_lstm_out
+                
+                if hparams.use_flows:
+                    decoder_out = dec_lstm_out + encoded_imgs
+                else:
+                    decoder_out = tf.concat((dec_lstm_out, encoded_imgs), -1)
+                
                 for op in self._dec_ops:
                     decoder_out = op(decoder_out)
                     if isinstance(op, layers.Conv2D):
@@ -79,10 +90,15 @@ class VGGConvGraph(BaseGraph):
                     masks = tf.expand_dims(tf.nn.softmax(masks), -1)
 
                     pred_imgs = []
-                    for f in range(hparams.n_flows):
-                        warped_image = tf.contrib.image.dense_image_warp(input_image, flows[:, :, :, f])
+                    if hparams.n_flows > hparams.context_frames:
+                        source_imgs = [inputs['images'][fr_i] for fr_i in range(hparams.context_frames)] + [input_image for _ in range(hparams.n_flows - hparams.context_frames)]
+                    else:
+                        source_imgs = [input_image for _ in range(hparams.n_flows)]
+
+                    for f, source_img in enumerate(source_imgs):
+                        warped_image = tf.contrib.image.dense_image_warp(source_img, flows[:, :, :, f])
                         pred_imgs.append(warped_image * masks[:, :, :, f])
-                        # TODO add skip connection (maybe with attention?)
+
                     outputs['gen_images'] = outputs.get('gen_images', []) + [tf.math.accumulate_n(pred_imgs)]
                     outputs['gen_flows'] = outputs.get('gen_flows', []) + [tf.transpose(flows, [0, 1, 2, 4, 3])]
                 else:
@@ -96,8 +112,6 @@ class VGGConvGraph(BaseGraph):
 
     def _init_layers(self, hparams, inputs, mode):
         T, B, H, W, C = inputs['images'].get_shape().as_list()
-        
-        self._img_append = layers.Dense(2 * W * C)
 
         self._conv_1_1 = layers.Conv2D(hparams.enc_filters[0], hparams.kernel_size, padding='same')
         self._conv_1_2 = layers.Conv2D(hparams.enc_filters[0], hparams.kernel_size, padding='same')
@@ -117,28 +131,32 @@ class VGGConvGraph(BaseGraph):
         self._enc_ops = [self._conv_1_1, self._conv_1_2, self._pool_1, self._conv_2_1, self._conv_2_2, self._conv_2_3,
                         self._pool_2, self._conv_3_1, self._conv_3_2, self._conv_3_3, self._conv_3_4, self._pool_3]
 
-        self._enc_lstm = layers.ConvLSTM2D(hparams.lstm_filters[0], hparams.kernel_size, padding = 'same')
-        self._enc_lstm.cell.build([B, T, int((H + 2) // 8), int(W // 8), hparams.enc_filters[2]])
-        self._dec_lstm = layers.ConvLSTM2D(hparams.lstm_filters[1], hparams.kernel_size, padding='same')
-        self._dec_lstm.cell.build([B, T, int((H + 2) // 8), int(W // 8), hparams.lstm_filters[0]])
+        enc_H, enc_W = [int(x // 8) for x in (H, W)]
+        self._enc_append = layers.Dense(enc_H * enc_W * hparams.action_append_channels)
+        self._enc_conv = layers.Conv2D(hparams.lstm_filters, 1, padding='same')
 
-        self._conv_tranpose_1 = layers.Conv2DTranspose(hparams.dec_filters[0], 2, strides=2)
+        self._enc_lstm = layers.ConvLSTM2D(hparams.lstm_filters, hparams.kernel_size, padding = 'same')
+        self._enc_lstm.cell.build([B, T, enc_H, enc_W, hparams.lstm_filters])
+        self._dec_lstm = layers.ConvLSTM2D(hparams.lstm_filters, hparams.kernel_size, padding='same')
+        self._dec_lstm.cell.build([B, T, enc_H, enc_W, hparams.lstm_filters])
+
+        self._conv_tranpose_1 = layers.Conv2DTranspose(hparams.lstm_filters, 2, strides=2)
         self._dec_conv_1_1 = layers.Conv2D(hparams.dec_filters[0], hparams.kernel_size, padding='same')
         self._dec_conv_1_2 = layers.Conv2D(hparams.dec_filters[0], hparams.kernel_size, padding='same')
         self._dec_conv_1_3 = layers.Conv2D(hparams.dec_filters[0], hparams.kernel_size, padding='same')
         self._dec_conv_1_4 = layers.Conv2D(hparams.dec_filters[0], hparams.kernel_size, padding='same')
 
-        self._conv_tranpose_2 = layers.Conv2DTranspose(hparams.dec_filters[1], 2, strides=2)
+        self._conv_tranpose_2 = layers.Conv2DTranspose(hparams.dec_filters[0], 2, strides=2)
         self._dec_conv_2_1 = layers.Conv2D(hparams.dec_filters[1], hparams.kernel_size, padding='same')
         self._dec_conv_2_2 = layers.Conv2D(hparams.dec_filters[1], hparams.kernel_size, padding='same')
         self._dec_conv_2_3 = layers.Conv2D(hparams.dec_filters[1], hparams.kernel_size, padding='same')
 
         if hparams.use_flows:
-            self._conv_tranpose_3 = layers.Conv2DTranspose(hparams.n_flows * 3, 2, strides=2)
+            self._conv_tranpose_3 = layers.Conv2DTranspose(hparams.dec_filters[1], 2, strides=2)
             self._dec_conv_3_1 = layers.Conv2D(hparams.n_flows * 3, hparams.kernel_size, padding='same')
             self._top = layers.Conv2D(hparams.n_flows * 3, hparams.kernel_size, padding='same')
         else:
-            self._conv_tranpose_3 = layers.Conv2DTranspose(3, 2, strides=2)
+            self._conv_tranpose_3 = layers.Conv2DTranspose(hparams.dec_filters[1], 2, strides=2)
             self._dec_conv_3_1 = layers.Conv2D(3, hparams.kernel_size, padding='same')
             self._top = layers.Conv2D(3, hparams.kernel_size, padding='same')
 
@@ -181,12 +199,13 @@ class VGGConvGraph(BaseGraph):
     def default_hparams():
         default_params =  {
             "enc_filters": [32, 128, 256],
-            "lstm_filters": [256, 256],
+            "lstm_filters": 256,
             "dec_filters": [128, 64],
             "kernel_size": 3,
+            'action_append_channels': 2,
 
             "use_flows": True,
-            "n_flows": 10,
+            "n_flows": 12,
 
             'schedule_sampling': "inverse_sigmoid",
             'schedule_sampling_k': 900.0,
