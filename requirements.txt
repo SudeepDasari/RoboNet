@@ -1,4 +1,4 @@
-tensorflow-gpu>=1.5.0
+
 opencv-python
 scipy
 scikit-image
@@ -8,3 +8,4 @@ pandas
 tqdm
 requests
 ray
+# you'll need fmmpeg either try sudo apt-get install libav-tools or sudo apt-get install ffmpeg

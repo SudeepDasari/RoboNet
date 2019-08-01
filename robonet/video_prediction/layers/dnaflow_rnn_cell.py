@@ -1,6 +1,6 @@
 import tensorflow as tf
 from robonet.video_prediction import ops, flow_ops
-from robonet.video_prediction.ops import dense, conv2d, flatten, tile_concat
+from robonet.video_prediction.ops import dense, conv2d, flatten, tile_concat, pad2d
 from robonet.video_prediction.rnn_ops import BasicConv2DLSTMCell, Conv2DGRUCell
 from robonet.video_prediction.utils import tf_utils
 
