@@ -83,8 +83,9 @@ class VGGConvGraph(BaseGraph):
                 # predict flows
                 if hparams.use_flows:
                     kernel_convs, mask_convs = tf.split(decoder_out, 2, axis=-1)
-                    kernels = tf.nn.relu(self._kernel_top(tf.reshape(kernel_convs, (B, -1))) - RELU_SHIFT) + RELU_SHIFT
-                    kernels = tf.reshape(kernels, (B, -1, hparams.n_flows))
+                    kernel_convs = tf.transpose(tf.reshape(kernel_convs, (B, -1, hparams.n_flows)), (0, 2, 1))
+                    kernels = tf.nn.relu(self._kernel_top(kernel_convs - RELU_SHIFT)) + RELU_SHIFT
+                    kernels = tf.transpose(kernels, (0, 2, 1))
                     kernels = tf.reshape(kernels / tf.reduce_sum(kernels, axis=1, keepdims=True), (B, hparams.cdna_kernel_size, -1, hparams.n_flows))
                     warped_images = tf.stack(apply_cdna_kernels(input_image, kernels), axis=-1)
 
@@ -145,16 +146,14 @@ class VGGConvGraph(BaseGraph):
                         self._conv_tranpose_3]
         
         if hparams.use_flows:
-            
             self._kernel_mask_conv = layers.Conv2D(hparams.n_flows * 2, 1, padding='same')
             self._dec_ops.append(self._kernel_mask_conv)
 
             # kernel prediction
-            self._kernel_top = layers.Dense(hparams.cdna_kernel_size ** 2 * hparams.n_flows)
+            self._kernel_top = layers.Dense(hparams.cdna_kernel_size ** 2)
             # mask prediction
             self._mask_top = layers.Conv2D(hparams.n_flows, hparams.kernel_size, padding='same')
         else:
-            self._conv_tranpose_3 = layers.Conv2DTranspose(hparams.dec_filters[1], 2, strides=2)
             self._dec_conv_3_1 = layers.Conv2D(3, hparams.kernel_size, padding='same')
             self._top = layers.Conv2D(3, hparams.kernel_size, padding='same')
 
