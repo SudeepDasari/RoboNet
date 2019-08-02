@@ -2,7 +2,6 @@
 data_directory: ${DATA_DIR}
 save_dir: "~/model_save"
 batch_sizes: [16]
-iter_per_loop: 1
 
 
 # loader_hparams used to initialize loader object
