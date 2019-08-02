@@ -23,7 +23,11 @@ class VPredTrainable(Trainable):
         model = PredictionModel(self._data_loader.hparams, self._hparams.n_gpus, self._hparams.graph_type, False)
         est, s_m, t_m = model.model_fn(inputs, targets, tf.estimator.ModeKeys.TRAIN, self.model_hparams)
         self._estimator, self._scalar_metrics, self._tensor_metrics = est, s_m, t_m
-        parameter_count = tf.reduce_sum([tf.reduce_prod(tf.shape(v)) for v in tf.trainable_variables()])
+        try:
+            parameter_count = np.sum([np.prod(v.get_shape().as_list()) for v in tf.trainable_variables()])
+            print("parameter_count =", parameter_count)
+        except TypeError:
+            pass
 
         self._global_step = tf.train.get_or_create_global_step()
         self.saver = tf.train.Saver(max_to_keep=self._hparams.max_to_keep)
@@ -36,7 +40,7 @@ class VPredTrainable(Trainable):
             self._restore(meta_file[0])
             self._restore_logs = False
     
-        print("parameter_count =", self.sess.run(parameter_count))
+        
 
     def _default_hparams(self):
         default_dict = {
