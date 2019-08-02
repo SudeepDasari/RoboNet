@@ -29,6 +29,16 @@ class BaseVideoDataset(object):
         # initialize hparams and store metadata_frame
         self._hparams = self._get_default_hparams().override_from_dict(hparams)
 
+        self._init_rng()
+
+        #initialize dataset
+        self._num_ex_per_epoch = self._init_dataset()
+        print('loaded {} train files'.format(self._num_ex_per_epoch))
+
+    def _init_dataset(self):
+        return 0
+
+    def _init_rng(self):
         # if RNG is not supplied then initialize new RNG
         self._random_generator = {}
         
@@ -41,14 +51,7 @@ class BaseVideoDataset(object):
                 seed = None
             self._random_generator[k] = random.Random(seed)
         self._np_rng = np.random.RandomState(self._random_generator['base'].getrandbits(32))
-
-        #initialize dataset
-        self._num_ex_per_epoch = self._init_dataset()
-        print('loaded {} train files'.format(self._num_ex_per_epoch))
-
-    def _init_dataset(self):
-        return 0
-
+    
     def _get(self, key, mode):
         raise NotImplementedError
 

@@ -3,6 +3,7 @@ import itertools
 import tensorflow as tf
 import tensorflow.keras.layers as layers
 from robonet.video_prediction.flow_ops import image_warp
+from robonet.video_prediction.layers.dnaflow_rnn_cell import apply_cdna_kernels, RELU_SHIFT
 
 
 class VGGConvGraph(BaseGraph):
@@ -81,27 +82,19 @@ class VGGConvGraph(BaseGraph):
 
                 # predict flows
                 if hparams.use_flows:
-                    flows_masks = tf.reshape(self._top(decoder_out), (B, H, W, hparams.n_flows, 3))
-                    flows, masks = flows_masks[:, :, :, :, :2], flows_masks[:, :, :, :, -1]
-                    masks = tf.expand_dims(tf.nn.softmax(masks), -1)
+                    kernel_convs, mask_convs = tf.split(decoder_out, 2, axis=-1)
+                    kernel_convs = tf.transpose(tf.reshape(kernel_convs, (B, -1, hparams.n_flows)), (0, 2, 1))
+                    kernels = tf.nn.relu(self._kernel_top(kernel_convs - RELU_SHIFT)) + RELU_SHIFT
+                    kernels = tf.transpose(kernels, (0, 2, 1))
+                    kernels = tf.reshape(kernels / tf.reduce_sum(kernels, axis=1, keepdims=True), (B, hparams.cdna_kernel_size, -1, hparams.n_flows))
+                    warped_images = tf.stack(apply_cdna_kernels(input_image, kernels), axis=-1)
 
-                    pred_imgs = []
-                    if hparams.n_flows > hparams.context_frames:
-                        source_imgs = [inputs['images'][fr_i] for fr_i in range(hparams.context_frames)] + [input_image for _ in range(hparams.n_flows - hparams.context_frames)]
-                    else:
-                        source_imgs = [input_image for _ in range(hparams.n_flows)]
+                    masks = tf.expand_dims(tf.nn.softmax(self._mask_top(mask_convs)), axis=-2)
 
-                    for f, source_img in enumerate(source_imgs):
-                        warped_image = tf.contrib.image.dense_image_warp(source_img, flows[:, :, :, f])
-                        pred_imgs.append(warped_image * masks[:, :, :, f])
-
-                    outputs['gen_images'] = outputs.get('gen_images', []) + [tf.math.accumulate_n(pred_imgs)]
-                    outputs['gen_flows'] = outputs.get('gen_flows', []) + [tf.transpose(flows, [0, 1, 2, 4, 3])]
+                    outputs['gen_images'] = outputs.get('gen_images', []) + [tf.reduce_sum(warped_images * masks, axis=-1)]
                 else:
                     outputs['gen_images'] = outputs.get('gen_images', []) + [self._top(decoder_out)]
 
-            if hparams.use_flows:
-                outputs['gen_flows'] = tf.concat([flow[None] for flow in outputs['gen_flows']], 0)
             outputs['gen_images'] = tf.concat([pred[None] for pred in outputs['gen_images']], 0)
             outputs['ground_truth_sampling_mean'] = tf.reduce_mean(tf.to_float(self._ground_truth[hparams.context_frames:]))
         return outputs
@@ -147,18 +140,24 @@ class VGGConvGraph(BaseGraph):
         self._dec_conv_2_2 = layers.Conv2D(hparams.dec_filters[1], hparams.kernel_size, padding='same')
         self._dec_conv_2_3 = layers.Conv2D(hparams.dec_filters[1], hparams.kernel_size, padding='same')
 
+        self._conv_tranpose_3 = layers.Conv2DTranspose(hparams.dec_filters[1], 2, strides=2)
+        self._dec_ops = [self._conv_tranpose_1, self._dec_conv_1_1, self._dec_conv_1_2, self._dec_conv_1_3, self._dec_conv_1_4,
+                        self._conv_tranpose_2, self._dec_conv_2_1, self._dec_conv_2_2, self._dec_conv_2_3,
+                        self._conv_tranpose_3]
+        
         if hparams.use_flows:
-            self._conv_tranpose_3 = layers.Conv2DTranspose(hparams.dec_filters[1], 2, strides=2)
-            self._dec_conv_3_1 = layers.Conv2D(hparams.n_flows * 3, hparams.kernel_size, padding='same')
-            self._top = layers.Conv2D(hparams.n_flows * 3, hparams.kernel_size, padding='same')
+            self._kernel_mask_conv = layers.Conv2D(hparams.n_flows * 2, 1, padding='same')
+            self._dec_ops.append(self._kernel_mask_conv)
+
+            # kernel prediction
+            self._kernel_top = layers.Dense(hparams.cdna_kernel_size ** 2)
+            # mask prediction
+            self._mask_top = layers.Conv2D(hparams.n_flows, hparams.kernel_size, padding='same')
         else:
-            self._conv_tranpose_3 = layers.Conv2DTranspose(hparams.dec_filters[1], 2, strides=2)
             self._dec_conv_3_1 = layers.Conv2D(3, hparams.kernel_size, padding='same')
             self._top = layers.Conv2D(3, hparams.kernel_size, padding='same')
 
-        self._dec_ops = [self._conv_tranpose_1, self._dec_conv_1_1, self._dec_conv_1_2, self._dec_conv_1_3, self._dec_conv_1_4,
-                        self._conv_tranpose_2, self._dec_conv_2_1, self._dec_conv_2_2, self._dec_conv_2_3,
-                        self._conv_tranpose_3, self._dec_conv_3_1]
+            self._dec_ops.append(self._dec_conv_3_1)
 
         ground_truth_sampling_shape = [hparams.sequence_length - 1 - hparams.context_frames, B]
         if hparams.schedule_sampling == 'none' or mode != tf.estimator.ModeKeys.TRAIN:
@@ -202,6 +201,7 @@ class VGGConvGraph(BaseGraph):
 
             "use_flows": True,
             "n_flows": 12,
+            "cdna_kernel_size": 10,
 
             'schedule_sampling': "inverse_sigmoid",
             'schedule_sampling_k': 900.0,
