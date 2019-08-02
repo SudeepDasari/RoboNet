@@ -1,0 +1,17 @@
+# general experiment and batch configs
+data_directory: ${DATA_DIR}
+save_dir: "~/model_save"
+batch_sizes: [16]
+iter_per_loop: 1
+
+
+# loader_hparams used to initialize loader object
+loader_hparams:
+  load_T: 15
+
+# model_hparams used to create graph and loss function
+model_hparams:
+  model: deterministic
+  graph_type: vgg_conv
+  use_flows: False
+  tv_weight: 0

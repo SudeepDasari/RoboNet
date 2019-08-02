@@ -8,6 +8,22 @@ from collections import OrderedDict
 from robonet.video_prediction import losses
 from robonet.video_prediction import metrics
 from robonet.video_prediction.models.deterministc_embedding_utils import onestep_encoder_fn, average_and_repeat, split_model_inference
+import logging
+
+
+def host_summary_fn(summary_dir, **summary_dict):
+    gs = summary_dict.pop('global_step')
+    with tf.contrib.summary.create_file_writer(summary_dir, max_queue=100).as_default():
+        with tf.contrib.summary.always_record_summaries():
+            for k, v in summary_dict.items():
+                step=tf.contrib.summary.scalar(k, v, step=gs)
+        return tf.contrib.summary.all_summary_ops()
+
+
+def wrap_host(summary_dir, fn):
+    def fn1(**kwargs):
+        return fn(summary_dir, **kwargs)
+    return fn1
 
 
 class DeterministicModel(BaseModel):
@@ -29,6 +45,7 @@ class DeterministicModel(BaseModel):
 
     def _model_fn(self, model_inputs, model_targets, mode):
         # prep inputs here
+        logger = logging.getLogger(__name__)
         inputs, targets = {}, {}
         inputs['actions'], inputs['images'] = tf.transpose(model_inputs['actions'], [1, 0, 2]), tf.transpose(model_inputs['images'], [1, 0, 2, 3, 4])
         if mode == tf.estimator.ModeKeys.TRAIN:
@@ -67,8 +84,8 @@ class DeterministicModel(BaseModel):
         # build the graph
         model_graph = self._graph_class()
 
-        if self._num_gpus == 1:
-            outputs = model_graph.build_graph(mode, inputs, self._hparams)
+        if self._num_gpus <= 1:
+            outputs = model_graph.build_graph(mode, inputs, self._hparams, self._graph_scope)
         else:
             # TODO: add multi-gpu support
             raise NotImplementedError
@@ -76,12 +93,15 @@ class DeterministicModel(BaseModel):
 
         # if train build the loss function (don't support multi-gpu training)
         if mode == tf.estimator.ModeKeys.TRAIN:
-            assert self._num_gpus == 1, "only single gpu training supported at the moment"
+            assert self._num_gpus <= 1, "only single gpu training supported at the moment"
             global_step = tf.train.get_or_create_global_step()
             lr, optimizer = tf_utils.build_optimizer(self._hparams.lr, self._hparams.beta1, self._hparams.beta2, 
                                         decay_steps=self._hparams.decay_steps, 
                                         end_lr=self._hparams.end_lr,
                                         global_step=global_step)
+            if self._tpu_mode and self._use_tpu:
+                optimizer = tf.contrib.tpu.CrossShardOptimizer(optimizer)
+
 
             gen_losses = OrderedDict()
             if not (self._hparams.l1_weight or self._hparams.l2_weight or self._hparams.vgg_cdist_weight):
@@ -168,10 +188,15 @@ class DeterministicModel(BaseModel):
             print('computing gradient and train_op')
             g_gradvars = optimizer.compute_gradients(loss, var_list=model_graph.vars)
             g_train_op = optimizer.apply_gradients(g_gradvars, global_step=global_step)
-
-            est = tf.estimator.EstimatorSpec(mode, loss=loss, train_op=g_train_op)
+            
             if self._tpu_mode:
-                return est
+                scalar_summaries['global_step'] = global_step
+                for k in scalar_summaries.keys():
+                    scalar_summaries[k]= tf.reshape(scalar_summaries[k], [1])
+                host_fn = wrap_host(self._summary_dir, host_summary_fn)
+                return tf.contrib.tpu.TPUEstimatorSpec(mode=mode, loss=loss, train_op=g_train_op, host_call=(host_fn, scalar_summaries))
+            
+            est = tf.estimator.EstimatorSpec(mode, loss=loss, train_op=g_train_op)
             return est, scalar_summaries, tensor_summaries
 
         ret_dict = {'predicted_frames': pred_frames[:, :, None]}
