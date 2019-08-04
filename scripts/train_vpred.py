@@ -21,7 +21,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     config = parse_config(args.experiment_file)
 
-    redis_address, max_failures, local_mode = None, 3, False
+    redis_address, max_failures, local_mode = None, 10, False
     resume = config.pop('resume', False)
     if args.cluster or config.pop('cluster', False):
         redis_address = ray.services.get_node_ip_address() + ':6379'

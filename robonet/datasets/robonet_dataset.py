@@ -122,7 +122,8 @@ class RoboNetDataset(BaseVideoDataset):
             'same_cam_across_sub_batch': False,      # same camera across sub_batches
             'pool_workers': 0,                       # number of workers for pool (if 0 uses batch_size workers)
             'color_augmentation':0.0,                # std of color augmentation (set to 0 for no augmentations)
-            'train_ex_per_source': [-1]              # list of train_examples per source (set to [-1] to rely on splits only)
+            'train_ex_per_source': [-1],             # list of train_examples per source (set to [-1] to rely on splits only)
+            'pool_timeout': 10                       # max time to wait to get batch from pool object
         }
         for k, v in default_loader_hparams().items():
             default_dict[k] = v
@@ -191,7 +192,7 @@ class RoboNetDataset(BaseVideoDataset):
                         b += 1
 
             batch_jobs = [(fn, fm, fh, fr) for fn, fm, fh, fr in zip(file_names, file_metadata, file_hparams, file_rng)]
-            batches = self._pool.map_async(_load_data, batch_jobs).get()
+            batches = self._pool.map_async(_load_data, batch_jobs).get(timeout=self._hparams.pool_timeout)
 
             ret_vals = []
             for i, b in enumerate(batches):

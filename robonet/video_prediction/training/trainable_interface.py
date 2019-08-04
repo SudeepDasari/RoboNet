@@ -39,8 +39,6 @@ class VPredTrainable(Trainable):
             meta_file = glob.glob(self._hparams.restore_dir + '/*.meta')
             self._restore(meta_file[0])
             self._restore_logs = False
-    
-        
 
     def _default_hparams(self):
         default_dict = {
