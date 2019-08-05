@@ -60,7 +60,6 @@ class GIFLogger(Logger):
             self._metric_logs = pkl.load(open(self._metric_file, 'rb'))
         else:
             self._metric_logs = {}
-        import pdb; pdb.set_trace()
         self._image_logs = {}
     
     def flush(self):
