@@ -1,5 +1,5 @@
 import argparse
-from robonet.video_prediction.training import GIFLogger, get_trainable
+from robonet.video_prediction.training import GIFLogger, get_trainable, TFImageLogger
 import tensorflow as tf
 import ray
 import ray.tune as tune
@@ -43,7 +43,7 @@ if __name__ == '__main__':
                 name=name,
                 run=get_trainable(config.pop('train_class')),
                 trial_name_creator=tune.function(trial_str_creator),
-                loggers=[GIFLogger],
+                loggers=[GIFLogger, TFImageLogger],
                 resources_per_trial= {"cpu": 1, "gpu": 1},
                 checkpoint_freq=config.pop('save_freq', 5000),
                 upload_dir=config.pop('upload_dir', None),

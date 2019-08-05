@@ -1,4 +1,5 @@
-from .ray_util.gif_logger import GIFLogger
+from .ray_util.gif_logger import GIFLogger, TFImageLogger
+
 
 def get_trainable(class_name):
     if class_name == 'VPredTrainable':
