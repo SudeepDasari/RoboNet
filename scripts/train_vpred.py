@@ -22,11 +22,12 @@ if __name__ == '__main__':
     config = parse_config(args.experiment_file)
 
     redis_address, max_failures, local_mode = None, 10, False
-    resume = config.pop('resume', False)
+    resume = config.pop('resume', True)
     if args.cluster or config.pop('cluster', False):
         redis_address = ray.services.get_node_ip_address() + ':6379'
         max_failures, resume = 20, True
     elif args.local_mode or config.pop('local_mode', False):
+        resume=False
         local_mode = True
         max_failures = 0
     
