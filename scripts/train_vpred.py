@@ -18,8 +18,10 @@ if __name__ == '__main__':
     parser.add_argument('--cluster', action='store_true', help="if flag enables cluster mode")
     parser.add_argument('--temp_dir', type=str, default=None, help="sets temp dir for ray redis (useful if permission error in /tmp/)")
     parser.add_argument('--name', type=str, default=None, help="sets experiment name")
+    parser.add_argument('--n_gpus', type=int, default=1, help="number of GPUs to train on")
     args = parser.parse_args()
     config = parse_config(args.experiment_file)
+    config['n_gpus'] = args.n_gpus
 
     redis_address, max_failures, local_mode = None, 10, False
     resume = config.pop('resume', True)
@@ -45,7 +47,7 @@ if __name__ == '__main__':
                 run=get_trainable(config.pop('train_class')),
                 trial_name_creator=tune.function(trial_str_creator),
                 loggers=[GIFLogger, TFImageLogger],
-                resources_per_trial= {"cpu": 1, "gpu": 1},
+                resources_per_trial= {"cpu": 1, "gpu": args.n_gpus},
                 checkpoint_freq=config.pop('save_freq', 5000),
                 upload_dir=config.pop('upload_dir', None),
                 local_dir=config.pop('local_dir', None),
