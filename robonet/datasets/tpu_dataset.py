@@ -72,7 +72,13 @@ class TPUVideoDataset(BaseVideoDataset):
         else:
             dataset = dataset.repeat(None)    # always have infinite val records
 
-        dataset = tf.data.TFRecordDataset(dataset, buffer_size=self._hparams.buffer_size, compression_type='GZIP')
+        ignore_order = tf.data.Options()
+        ignore_order.experimental_deterministic = False
+        dataset = dataset.with_options(ignore_order)
+        dataset = dataset.interleave(tf.data.TFRecordDataset, 
+                                    cycle_length=32,
+                                    num_parallel_calls=tf.data.experimental.AUTOTUNE)
+
         parse_fn = functools.partial(self._parse_records, metadata=dataset_metadata)
         dataset = dataset.map(parse_fn)
         dataset = dataset.shuffle(buffer_size=self._hparams.shuffle_buffer)
@@ -139,7 +145,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description="tfrecord dataset tester")
     parser.add_argument('--path', type=str, required=True, help='path to tfrecord files')
-    parser.add_argument('-batch_size', type=int, default=10, help='batch size for loaded data')
+    parser.add_argument('--batch_size', type=int, default=10, help='batch size for loaded data')
     args = parser.parse_args()
 
     loader = TPUVideoDataset([args.batch_size], [args.path], {'train_frac': 0.5, 'shuffle_buffer': 10})
