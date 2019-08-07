@@ -5,6 +5,7 @@ Converts data from hdf5 format to TFRecord format
 import tensorflow as tf
 from robonet.datasets.util.hdf5_loader import load_data, default_loader_hparams
 from tqdm import tqdm
+import cv2
 
 
 def float_feature(value):
@@ -19,8 +20,10 @@ def save_record(filename, trajs):
     writer = tf.python_io.TFRecordWriter(filename)
     for traj in tqdm(trajs):
         images, actions, states = traj
+        image_bytes = cv2.imencode('.jpg', images.reshape((-1, images.shape[-2], images.shape[-1]))[:, :, ::-1])[1].tostring()
+
         feature = {}
-        feature['images'] = bytes_feature(images.flatten().tostring())
+        feature['images'] = bytes_feature(image_bytes)
         feature['actions'] = float_feature(actions.flatten().tolist())
         feature['states'] = float_feature(states.flatten().tolist())
         example = tf.train.Example(features=tf.train.Features(feature=feature))
@@ -58,7 +61,7 @@ if __name__ == '__main__':
     parser.add_argument('--target_sdim', type=int, default=5, help='target state dimension for loading')
     parser.add_argument('--img_dims', type=int, nargs='+', default=[48, 64], help='(height, width) to resize images')
     parser.add_argument('--save_dir', type=str, default='./', help='where to save records')
-    parser.add_argument('--ex_per_record', type=int, default=96, help='examples per record file')
+    parser.add_argument('--ex_per_record', type=int, default=512, help='examples per record file')
     args = parser.parse_args()
 
     name_dir = 'record_names/' + '/'.join(args.save_dir.split('/')[1:])
@@ -101,7 +104,7 @@ if __name__ == '__main__':
         f_load = all_files[f_ind:f_ind + args.ex_per_record]
         fm_load = [metadata.get_file_metadata(f) for f in f_load]
         f_hparams = [copy.deepcopy(hparams) for _ in f_load]
-        
+
         loaded_data = pool.map(_load_hdf5, [(f, fm, fh) for f, fm, fh in zip(f_load, fm_load, f_hparams)])
         f_name = '{}/record{}.tfrecord'.format(args.save_dir, r_cntr)
         save_record(f_name, loaded_data)

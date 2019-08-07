@@ -76,7 +76,7 @@ class TPUVideoDataset(BaseVideoDataset):
         ignore_order.experimental_deterministic = False
         dataset = dataset.with_options(ignore_order)
         dataset = dataset.interleave(tf.data.TFRecordDataset, 
-                                    cycle_length=32,
+                                    cycle_length=min(len(files), 32),
                                     num_parallel_calls=tf.data.experimental.AUTOTUNE)
 
         parse_fn = functools.partial(self._parse_records, metadata=dataset_metadata)
@@ -88,7 +88,7 @@ class TPUVideoDataset(BaseVideoDataset):
 
     def _parse_records(self, serialized_example, metadata):
         feat_names = {}
-        feat_names['images'] = tf.FixedLenFeature([1], tf.string)
+        feat_names['images'] = tf.FixedLenFeature([], tf.string)
         feat_names['actions'] = tf.FixedLenFeature([(metadata['T'] - 1) * metadata['adim']], tf.float32)
         feat_names['states'] = tf.FixedLenFeature([metadata['T'] * metadata['sdim']], tf.float32)
 
@@ -99,9 +99,9 @@ class TPUVideoDataset(BaseVideoDataset):
 
         decoded_feat = {}
         height, width = metadata['img_dim']
-        img_decode = tf.decode_raw(feature['images'], tf.uint8)
-        img_flat = tf.reshape(img_decode, [1, metadata['T'] * metadata['ncam'] * height * width * 3])
-        decoded_feat['images'] = tf.reshape(img_flat, [metadata['T'], metadata['ncam'], height, width, 3])[rand_start:rand_start+self._hparams.load_T, rand_cam]
+        
+        vid_decode = tf.reshape(tf.image.decode_jpeg(feature['images'], channels=3), (metadata['T'] * metadata['ncam'] * height, width, 3))
+        decoded_feat['images'] = tf.reshape(vid_decode, [metadata['T'], metadata['ncam'], height, width, 3])[rand_start:rand_start+self._hparams.load_T, rand_cam]
         decoded_feat['actions'] = tf.reshape(feature['actions'], [metadata['T'] - 1, metadata['adim']])[rand_start:rand_start+self._hparams.load_T - 1]
         decoded_feat['states'] = tf.reshape(feature['states'], [metadata['T'], metadata['sdim']])[rand_start:rand_start+self._hparams.load_T]
 
@@ -115,11 +115,11 @@ class TPUVideoDataset(BaseVideoDataset):
         default_dict = {
             'RNG': 11381294392481135266,
             'use_random_train_seed': False,
-            'shuffle_buffer': 1000,
+            'shuffle_buffer': 500,
             'n_epochs': None,
             'buffer_size': 10,
             'train_frac': 0.9,                  # train, val
-            'load_T': 16,
+            'load_T': 15,
             'bucket_dir': ''
         }
         return HParams(**default_dict)
@@ -151,14 +151,14 @@ if __name__ == '__main__':
     loader = TPUVideoDataset([args.batch_size], [args.path], {'train_frac': 0.5, 'shuffle_buffer': 10})
     print(loader['images'], loader['actions'], loader['states'])
     s = tf.Session()
-    for _ in range(1000):
+    for j in range(10):
         t = time.time()
         img, act, state = s.run([loader['images'], loader['actions'], loader['states']])
         print(time.time() - t)
     
-    w = imageio.get_writer('./out.gif')
-    for t in range(img.shape[1]):
-        w.append_data((np.concatenate(img[:, t], axis=-2) * 255).astype(np.uint8))
+        w = imageio.get_writer('./out{}.gif'.format(j))
+        for t in range(img.shape[1]):
+            w.append_data((np.concatenate(img[:, t], axis=-2) * 255).astype(np.uint8))
 
     import pdb; pdb.set_trace()
     print(img.shape)
