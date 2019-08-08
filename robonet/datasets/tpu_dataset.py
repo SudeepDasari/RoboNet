@@ -82,7 +82,7 @@ class TPUVideoDataset(BaseVideoDataset):
         parse_fn = functools.partial(self._parse_records, metadata=dataset_metadata)
         dataset = dataset.map(parse_fn)
         dataset = dataset.shuffle(buffer_size=self._hparams.shuffle_buffer)
-        dataset = dataset.batch(batch_size, drop_remainder=True).prefetch(1)
+        dataset = dataset.batch(batch_size, drop_remainder=True).prefetch(tf.data.experimental.AUTOTUNE)
         outputs = dataset.make_one_shot_iterator().get_next()
         return outputs
 
