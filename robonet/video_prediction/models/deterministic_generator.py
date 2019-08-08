@@ -12,7 +12,7 @@ import logging
 
 
 def host_summary_fn(summary_dir, **summary_dict):
-    gs = summary_dict.pop('global_step')
+    gs = summary_dict.pop('global_step')[0]
     with tf.contrib.summary.create_file_writer(summary_dir, max_queue=100).as_default():
         with tf.contrib.summary.always_record_summaries():
             for k, v in summary_dict.items():
@@ -194,7 +194,7 @@ class DeterministicModel(BaseModel):
                 for k in scalar_summaries.keys():
                     scalar_summaries[k]= tf.reshape(scalar_summaries[k], [1])
                 host_fn = wrap_host(self._summary_dir, host_summary_fn)
-                return tf.contrib.tpu.TPUEstimatorSpec(mode=mode, loss=loss, train_op=g_train_op) #, host_call=(host_fn, scalar_summaries))
+                return tf.contrib.tpu.TPUEstimatorSpec(mode=mode, loss=loss, train_op=g_train_op, host_call=(host_fn, scalar_summaries))
             
             est = tf.estimator.EstimatorSpec(mode, loss=loss, train_op=g_train_op)
             return est, scalar_summaries, tensor_summaries
