@@ -41,8 +41,8 @@ if __name__ == '__main__':
     input_dir = os.path.expanduser(config['data_directory'])
     batch_sizes = config['batch_sizes']
     model_hparams['summary_dir'] = save_dir = os.path.expanduser(config['save_dir'])
-    iter_per_loop = config.get('iter_per_loop', 100)
-    train_steps_per_eval = config.get('train_steps_per_eval', 1000)
+    iter_per_loop = config.get('iter_per_loop', 500)
+    train_steps_per_save = config.get('train_steps_per_save', 10000)
     robots = config.get('robots', ['sawyer'])
     max_steps = config.get('max_steps', 300000)
 
@@ -60,7 +60,7 @@ if __name__ == '__main__':
         tpu_cluster_resolver = tf.contrib.cluster_resolver.TPUClusterResolver(os.environ['TPU_NAME'], zone=os.environ['TPU_ZONE'], project=os.environ['PROJECT_ID'])
 
     tpu_config = tf.contrib.tpu.TPUConfig(iterations_per_loop=iter_per_loop)
-    run_config = tf.contrib.tpu.RunConfig(cluster=tpu_cluster_resolver, model_dir=save_dir, save_checkpoints_steps=train_steps_per_eval,tpu_config=tpu_config)
+    run_config = tf.contrib.tpu.RunConfig(cluster=tpu_cluster_resolver, model_dir=save_dir, save_checkpoints_steps=train_steps_per_save,tpu_config=tpu_config)
 
     tf.logging.set_verbosity(tf.logging.DEBUG)
     estimator = tf.contrib.tpu.TPUEstimator(model_fn=model.model_fn,
