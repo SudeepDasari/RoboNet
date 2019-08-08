@@ -35,6 +35,7 @@ class TPUVideoDataset(BaseVideoDataset):
             dataset_metadata = json.load(open('{}/format.json'.format(dataset_path), 'r'))
             
             if self._hparams.bucket_dir:
+                print('loading files from: {}'.format(dataset_path + '/files.json'))
                 all_files = json.load(open(dataset_path + '/files.json'))
                 all_files = ['{}/{}'.format(self._hparams.bucket_dir, f) for f in all_files]
             else:

@@ -44,6 +44,26 @@ class DeterministicModel(BaseModel):
         }
 
     def _model_fn(self, model_inputs, model_targets, mode):
+        with tf.variable_scope('test'):
+            conv_1_1 = tf.keras.layers.Conv2D(3, 3, padding='same')
+            out = conv_1_1(model_inputs['images'][:, 0])
+
+        global_step = tf.train.get_or_create_global_step()
+        lr, optimizer = tf_utils.build_optimizer(self._hparams.lr, self._hparams.beta1, self._hparams.beta2, 
+                                    decay_steps=self._hparams.decay_steps, 
+                                    end_lr=self._hparams.end_lr,
+                                    global_step=global_step)
+        if self._tpu_mode and self._use_tpu:
+            optimizer = tf.contrib.tpu.CrossShardOptimizer(optimizer)
+        
+        loss = tf.reduce_mean(tf.abs(model_targets['images'][:, 0] - out))
+
+        print('computing gradient and train_op')
+        g_gradvars = optimizer.compute_gradients(loss, var_list=tf.trainable_variables('test'))
+        g_train_op = optimizer.apply_gradients(g_gradvars, global_step=global_step)
+        
+        return tf.contrib.tpu.TPUEstimatorSpec(mode=mode, loss=loss, train_op=g_train_op)
+
         # prep inputs here
         logger = logging.getLogger(__name__)
         inputs, targets = {}, {}
