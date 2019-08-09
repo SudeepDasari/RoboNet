@@ -11,10 +11,10 @@ from robonet.video_prediction.models.deterministc_embedding_utils import onestep
 import logging
 
 
-def host_summary_fn(summary_dir, **summary_dict):
+def host_summary_fn(summary_dir, summary_queue_len, **summary_dict):
     gs = summary_dict.pop('global_step')[0]               # the 0 index here is crucial, will error on TPU otherwise
     real_vs_gen = summary_dict.pop('real_vs_gen')
-    with tf.contrib.summary.create_file_writer(summary_dir, max_queue=100).as_default():
+    with tf.contrib.summary.create_file_writer(summary_dir, max_queue=summary_queue_len).as_default():
         with tf.contrib.summary.always_record_summaries():
             tf.contrib.summary.image("real_vs_gen", real_vs_gen, step=gs)   
             for k, v in summary_dict.items():
@@ -22,9 +22,9 @@ def host_summary_fn(summary_dir, **summary_dict):
         return tf.contrib.summary.all_summary_ops()
 
 
-def wrap_host(summary_dir, fn):
+def wrap_host(summary_dir, summary_queue_len, fn):
     def fn1(**kwargs):
-        return fn(summary_dir, **kwargs)
+        return fn(summary_dir, summary_queue_len, **kwargs)
     return fn1
 
 
@@ -206,7 +206,7 @@ class DeterministicModel(BaseModel):
                 log_tensor = tf.stack(real_gen)
 
                 log_summaries['real_vs_gen'] = tf.clip_by_value(tf.concat(log_tensor, axis=0), 0, 1)
-                host_fn = wrap_host(self._summary_dir, host_summary_fn)
+                host_fn = wrap_host(self._summary_dir, self._summary_queue_len, host_summary_fn)
                 return tf.contrib.tpu.TPUEstimatorSpec(mode=mode, loss=loss, train_op=g_train_op, host_call=(host_fn, log_summaries))
             
             est = tf.estimator.EstimatorSpec(mode, loss=loss, train_op=g_train_op)

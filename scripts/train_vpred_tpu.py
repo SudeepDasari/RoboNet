@@ -41,7 +41,7 @@ if __name__ == '__main__':
     input_dir = os.path.expanduser(config['data_directory'])
     batch_sizes = config['batch_sizes']
     model_hparams['summary_dir'] = save_dir = os.path.expanduser(config['save_dir'])
-    iter_per_loop = config.get('iter_per_loop', 500)
+    model_hparams['summary_queue_len'] = iter_per_loop = config.get('iter_per_loop', 500)
     train_steps_per_save = config.get('train_steps_per_save', 10000)
     robots = config.get('robots', ['sawyer'])
     max_steps = config.get('max_steps', 300000)
