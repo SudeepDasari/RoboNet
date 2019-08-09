@@ -14,3 +14,6 @@ model_hparams:
   graph_type: vgg_conv
   use_flows: False
   tv_weight: 0
+  enc_filters: [512, 1024, 2048]
+  lstm_filters: 2048
+  dec_filters: [1024, 512]
