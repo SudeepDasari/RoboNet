@@ -195,6 +195,13 @@ class DeterministicModel(BaseModel):
             g_train_op = optimizer.apply_gradients(g_gradvars, global_step=global_step)
             
             if self._tpu_mode:
+                import numpy as np
+                try:
+                    parameter_count = np.sum([np.prod(v.get_shape().as_list()) for v in tf.trainable_variables()])
+                    print("parameter_count =", parameter_count)
+                except TypeError:
+                    pass
+
                 log_summaries = {}
                 log_summaries['global_step'] = tf.reshape(global_step, [1])
                 for k in scalar_summaries.keys():
