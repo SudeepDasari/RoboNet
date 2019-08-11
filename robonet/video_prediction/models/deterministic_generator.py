@@ -44,7 +44,7 @@ class DeterministicModel(BaseModel):
             'num_scales': 1,
             'vgg_cdist_weight': 0.0,
             'state_weight': 0.0,
-            'tv_weight': 0.001,
+            'tv_weight': 0,
             "tpu_log_pad": 5
         }
 

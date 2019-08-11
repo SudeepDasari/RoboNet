@@ -20,7 +20,7 @@ class VPredTrainable(Trainable):
         inputs, targets = self._make_dataloaders(config)
 
         PredictionModel = get_model(self.model_hparams.pop('model'))
-        model = PredictionModel(self._data_loader.hparams, self._hparams.n_gpus, self._hparams.graph_type, False)
+        self._model = model = PredictionModel(self._data_loader.hparams, self._hparams.n_gpus, self._hparams.graph_type, False)
         est, s_m, t_m = model.model_fn(inputs, targets, tf.estimator.ModeKeys.TRAIN, self.model_hparams)
         self._estimator, self._scalar_metrics, self._tensor_metrics = est, s_m, t_m
         try:

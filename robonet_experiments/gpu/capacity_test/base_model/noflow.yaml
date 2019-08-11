@@ -27,3 +27,4 @@ model_hparams:
   graph_type: vgg_conv
   use_flows: False
   tv_weight: 0
+  float16: True
