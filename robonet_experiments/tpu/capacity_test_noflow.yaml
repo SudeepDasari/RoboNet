@@ -1,7 +1,7 @@
 # general experiment and batch configs
 data_directory: ${DATA_DIR}
-save_dir: "~/model_save"
-batch_sizes: [16]
+save_dir: "model_save"
+batch_sizes: [8]
 
 
 # loader_hparams used to initialize loader object
@@ -14,3 +14,6 @@ model_hparams:
   graph_type: vgg_conv
   use_flows: False
   tv_weight: 0
+  enc_filters: [512, 1024, 1792]
+  lstm_filters: 1792
+  dec_filters: [1024, 512]

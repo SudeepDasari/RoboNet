@@ -35,6 +35,7 @@ class TPUVideoDataset(BaseVideoDataset):
             dataset_metadata = json.load(open('{}/format.json'.format(dataset_path), 'r'))
             
             if self._hparams.bucket_dir:
+                print('loading files from: {}'.format(dataset_path + '/files.json'))
                 all_files = json.load(open(dataset_path + '/files.json'))
                 all_files = ['{}/{}'.format(self._hparams.bucket_dir, f) for f in all_files]
             else:
@@ -82,7 +83,7 @@ class TPUVideoDataset(BaseVideoDataset):
         parse_fn = functools.partial(self._parse_records, metadata=dataset_metadata)
         dataset = dataset.map(parse_fn)
         dataset = dataset.shuffle(buffer_size=self._hparams.shuffle_buffer)
-        dataset = dataset.batch(batch_size, drop_remainder=True).prefetch(1)
+        dataset = dataset.batch(batch_size, drop_remainder=True).prefetch(tf.data.experimental.AUTOTUNE)
         outputs = dataset.make_one_shot_iterator().get_next()
         return outputs
 

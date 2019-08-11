@@ -20,6 +20,9 @@ class BaseModel(object):
         params = copy.deepcopy(params)
         if self._tpu_mode:
             self._summary_dir = params.pop('summary_dir')
+            self._summary_queue_len = params.pop('summary_queue_len')
+            self._image_summary_freq = params.pop('image_summary_freq')
+
         self._use_tpu = params.pop('use_tpu', None)
         for k in list(params.keys()):
             if k not in default_hparams:

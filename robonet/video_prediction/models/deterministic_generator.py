@@ -11,18 +11,22 @@ from robonet.video_prediction.models.deterministc_embedding_utils import onestep
 import logging
 
 
-def host_summary_fn(summary_dir, **summary_dict):
-    gs = summary_dict.pop('global_step')
-    with tf.contrib.summary.create_file_writer(summary_dir, max_queue=100).as_default():
-        with tf.contrib.summary.always_record_summaries():
+def host_summary_fn(summary_dir, summary_queue_len, image_summary_freq, **summary_dict):
+    gs = summary_dict.pop('global_step')[0]               # the 0 index here is crucial, will error on TPU otherwise
+    real_vs_gen = summary_dict.pop('real_vs_gen')
+    with tf.contrib.summary.create_file_writer(summary_dir, max_queue=summary_queue_len).as_default():
+        with tf.contrib.summary.record_summaries_every_n_global_steps(image_summary_freq, global_step=gs):
+            tf.contrib.summary.image("real_vs_gen", real_vs_gen, step=gs)
+        
+        with tf.contrib.summary.always_record_summaries():   
             for k, v in summary_dict.items():
-                step=tf.contrib.summary.scalar(k, v, step=gs)
+                tf.contrib.summary.scalar(k, v, step=gs)
         return tf.contrib.summary.all_summary_ops()
 
 
-def wrap_host(summary_dir, fn):
+def wrap_host(summary_dir, summary_queue_len, image_summary_freq, fn):
     def fn1(**kwargs):
-        return fn(summary_dir, **kwargs)
+        return fn(summary_dir, summary_queue_len, image_summary_freq, **kwargs)
     return fn1
 
 
@@ -41,6 +45,7 @@ class DeterministicModel(BaseModel):
             'vgg_cdist_weight': 0.0,
             'state_weight': 0.0,
             'tv_weight': 0.001,
+            "tpu_log_pad": 5
         }
 
     def _model_fn(self, model_inputs, model_targets, mode):
@@ -190,11 +195,28 @@ class DeterministicModel(BaseModel):
             g_train_op = optimizer.apply_gradients(g_gradvars, global_step=global_step)
             
             if self._tpu_mode:
-                scalar_summaries['global_step'] = global_step
+                import numpy as np
+                try:
+                    parameter_count = np.sum([np.prod(v.get_shape().as_list()) for v in tf.trainable_variables()])
+                    print("parameter_count =", parameter_count)
+                except TypeError:
+                    pass
+
+                log_summaries = {}
+                log_summaries['global_step'] = tf.reshape(global_step, [1])
                 for k in scalar_summaries.keys():
-                    scalar_summaries[k]= tf.reshape(scalar_summaries[k], [1])
-                host_fn = wrap_host(self._summary_dir, host_summary_fn)
-                return tf.contrib.tpu.TPUEstimatorSpec(mode=mode, loss=loss, train_op=g_train_op, host_call=(host_fn, scalar_summaries))
+                    log_summaries[k]= tf.reshape(scalar_summaries[k], [1])
+                
+                reals, gen = [tf.split(tf.transpose(tens, [1, 0, 2, 3, 4]), tens.get_shape().as_list()[1], axis=0) for tens in [target_images, gen_images]]
+                reals, gen = [[tf.concat(tf.split(i[0], i.get_shape().as_list()[1], axis=0), axis=-2)[0]  for i in img]  for img in (reals, gen)]
+                pad = tf.ones([self._hparams.tpu_log_pad] + reals[0].get_shape().as_list()[1:])
+                real_gen = [tf.concat((r, pad, g), axis=0)  for r, g in zip(reals, gen)]
+                
+                log_tensor = tf.stack(real_gen)
+
+                log_summaries['real_vs_gen'] = tf.clip_by_value(tf.concat(log_tensor, axis=0), 0, 1)
+                host_fn = wrap_host(self._summary_dir, self._summary_queue_len, self._image_summary_freq, host_summary_fn)
+                return tf.contrib.tpu.TPUEstimatorSpec(mode=mode, loss=loss, train_op=g_train_op, host_call=(host_fn, log_summaries))
             
             est = tf.estimator.EstimatorSpec(mode, loss=loss, train_op=g_train_op)
             return est, scalar_summaries, tensor_summaries
