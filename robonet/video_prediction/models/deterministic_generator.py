@@ -82,7 +82,7 @@ class DeterministicModel(BaseModel):
         inputs['outputs_enc'] = outputs_enc
 
         # build the graph
-        model_graph = self._graph_class()
+        self._model_graph = model_graph = self._graph_class()
 
         if self._num_gpus <= 1:
             outputs = model_graph.build_graph(mode, inputs, self._hparams, self._graph_scope)
