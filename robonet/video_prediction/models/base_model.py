@@ -29,6 +29,7 @@ class BaseModel(object):
                 params.pop(k)
 
         self._hparams = HParams(**default_hparams).override_from_dict(params)
+        self._hparams.use_tpu = self._use_tpu
     
     def model_fn(self, features, labels, mode, params):
         self.init_default_hparams(params)

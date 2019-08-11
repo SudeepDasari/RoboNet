@@ -54,10 +54,11 @@ class RoboNetDataset(BaseVideoDataset):
         else:
             assert self._hparams.load_T <= min_steps, "ask to load {} steps but some records only have {}!".format(self._hparams.min_T, min_steps)
 
-        n_workers = min(self._batch_size, multiprocessing.cpu_count())
+        self._n_workers = min(self._batch_size, multiprocessing.cpu_count())
         if self._hparams.pool_workers:
-            n_workers = min(self._hparams.pool_workers, multiprocessing.cpu_count())
-        self._pool = multiprocessing.Pool(n_workers)
+            self._n_workers = min(self._hparams.pool_workers, multiprocessing.cpu_count())
+        self._n_pool_resets = 0
+        self._pool = multiprocessing.Pool(self._n_workers)
 
         n_train_ex = 0
         mode_sources = [[] for _ in range(len(self.modes))]
@@ -123,7 +124,8 @@ class RoboNetDataset(BaseVideoDataset):
             'pool_workers': 0,                       # number of workers for pool (if 0 uses batch_size workers)
             'color_augmentation':0.0,                # std of color augmentation (set to 0 for no augmentations)
             'train_ex_per_source': [-1],             # list of train_examples per source (set to [-1] to rely on splits only)
-            'pool_timeout': 10                       # max time to wait to get batch from pool object
+            'pool_timeout': 10,                      # max time to wait to get batch from pool object
+            'MAX_RESETS': 10                         # maximum number of pool resets before error is raised in main thread
         }
         for k, v in default_loader_hparams().items():
             default_dict[k] = v
@@ -192,7 +194,15 @@ class RoboNetDataset(BaseVideoDataset):
                         b += 1
 
             batch_jobs = [(fn, fm, fh, fr) for fn, fm, fh, fr in zip(file_names, file_metadata, file_hparams, file_rng)]
-            batches = self._pool.map_async(_load_data, batch_jobs).get(timeout=self._hparams.pool_timeout)
+
+            try:
+                batches = self._pool.map_async(_load_data, batch_jobs).get(timeout=self._hparams.pool_timeout)
+            except TimeoutError:
+                self._pool.terminate()
+                self._pool.close()
+                self._pool = multiprocessing.Pool(self._n_workers)
+                self._n_pool_resets += 1
+                batches = [_load_data(job) for job in batch_jobs]
 
             ret_vals = []
             for i, b in enumerate(batches):
@@ -269,6 +279,9 @@ class RoboNetDataset(BaseVideoDataset):
         return pl_dict
 
     def build_feed_dict(self, mode):
+        if self._n_pool_resets > self._hparams.MAX_RESETS:
+            raise TimeoutError
+
         fetch = {}
         if mode == self.primary_mode:
             # set placeholders to null
@@ -298,6 +311,7 @@ class RoboNetDataset(BaseVideoDataset):
         if self._hparams.load_annotations:
             fetch[self._place_holder_dict['annotations']] = annotations
         return fetch
+
 
 def _timing_test(N, loader):
     import time
