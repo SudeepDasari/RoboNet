@@ -212,9 +212,12 @@ class DeterministicModel(BaseModel):
                 pad = tf.ones([self._hparams.tpu_log_pad] + reals[0].get_shape().as_list()[1:])
                 real_gen = [tf.concat((r, pad, g), axis=0)  for r, g in zip(reals, gen)]
                 
-                log_tensor = tf.stack(real_gen)
+                log_tensor = [real_gen[0]]
+                for rg in real_gen[1:]:
+                    log_tensor.extend([pad, pad, rg])
+                log_tensor = tf.concat(log_tensor, axis=0)[None]
 
-                log_summaries['real_vs_gen'] = tf.clip_by_value(tf.concat(log_tensor, axis=0), 0, 1)
+                log_summaries['real_vs_gen'] = tf.clip_by_value(log_tensor, 0, 1)
                 host_fn = wrap_host(self._summary_dir, self._summary_queue_len, self._image_summary_freq, host_summary_fn)
                 return tf.contrib.tpu.TPUEstimatorSpec(mode=mode, loss=loss, train_op=g_train_op, host_call=(host_fn, log_summaries))
             

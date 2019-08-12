@@ -156,6 +156,8 @@ if __name__ == '__main__':
         t = time.time()
         img, act, state = s.run([loader['images'], loader['actions'], loader['states']])
         print(time.time() - t)
+        print('actions', act)
+        print('state', state)
     
         w = imageio.get_writer('./out{}.gif'.format(j))
         for t in range(img.shape[1]):
