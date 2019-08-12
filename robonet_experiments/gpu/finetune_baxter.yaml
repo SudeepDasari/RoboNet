@@ -31,3 +31,4 @@ loader_hparams:
 model_hparams:
   model: deterministic
   graph_type: c_dna_flow
+  tv_weight: 0.001

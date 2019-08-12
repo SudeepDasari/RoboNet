@@ -44,7 +44,7 @@ class DeterministicModel(BaseModel):
             'num_scales': 1,
             'vgg_cdist_weight': 0.0,
             'state_weight': 0.0,
-            'tv_weight': 0.001,
+            'tv_weight': 0,
             "tpu_log_pad": 5
         }
 
@@ -87,7 +87,7 @@ class DeterministicModel(BaseModel):
         inputs['outputs_enc'] = outputs_enc
 
         # build the graph
-        model_graph = self._graph_class()
+        self._model_graph = model_graph = self._graph_class()
 
         if self._num_gpus <= 1:
             outputs = model_graph.build_graph(mode, inputs, self._hparams, self._graph_scope)

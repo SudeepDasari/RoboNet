@@ -6,6 +6,20 @@ from robonet.video_prediction.flow_ops import image_warp
 from robonet.video_prediction.layers.dnaflow_rnn_cell import apply_cdna_kernels, RELU_SHIFT
 
 
+def _cast_down(tensor, hparams):
+    if hparams.float16 and hparams.use_tpu:
+        return tf.cast(tensor, tf.bfloat16)
+    elif hparams.float16:
+        return tf.cast(tensor, tf.float16)
+    return tensor
+
+
+def _cast_up(tensor):
+    if tensor.dtype != tf.float32:
+        return tf.cast(tensor, tf.float32)
+    return tensor
+
+
 class VGGConvGraph(BaseGraph):
     def build_graph(self, mode, inputs, hparams, scope_name='flow_generator'):
         self._scope_name = scope_name
@@ -23,35 +37,39 @@ class VGGConvGraph(BaseGraph):
             for t in range(hparams.sequence_length - 1):
                 norm_ctr = 0
                 print('building graph for t={}'.format(t), end="\r")
-                action_state_vector = inputs['actions'][t]
+                action_state_vector = _cast_down(inputs['actions'][t], hparams)
                 if t < hparams.context_frames:
-                    input_image = inputs['images'][t]
+                    input_image = _cast_down(inputs['images'][t], hparams)
                 else:
-                    input_image = tf.where(self._ground_truth[t], inputs['images'][t], outputs['gen_images'][-1])
+                    casted_real = _cast_down(inputs['images'][t], hparams)
+                    casted_gen = _cast_down(outputs['gen_images'][-1], hparams)
+                    input_image = tf.where(self._ground_truth[t], casted_real, casted_gen)
 
                 # encoder convs
                 encoded_imgs = input_image
                 for i, op in enumerate(self._enc_ops):
                     encoded_imgs = op(encoded_imgs)
                     if isinstance(op, layers.Conv2D):
+                        encoded_imgs = _cast_up(encoded_imgs)
                         encoded_imgs = tf.contrib.layers.instance_norm(encoded_imgs, activation_fn=tf.nn.relu, 
                                                                         scope='norm{}'.format(norm_ctr), reuse = t > 0)
+                        encoded_imgs = _cast_down(encoded_imgs, hparams)
                         norm_ctr += 1
 
                 # encode actions and append to hidden state
                 enc_append = tf.reshape(self._enc_append(action_state_vector), (B, int(H // 8), int(W // 8), 
                                         hparams.action_append_channels))
                 encoded_imgs = self._enc_conv(tf.concat((encoded_imgs, enc_append), -1))
-                encoded_imgs = tf.contrib.layers.instance_norm(encoded_imgs, activation_fn=tf.nn.relu, 
+                encoded_imgs = tf.contrib.layers.instance_norm(_cast_up(encoded_imgs), activation_fn=tf.nn.relu, 
                                                                 scope='norm{}'.format(norm_ctr), reuse = t > 0)
                 norm_ctr += 1
-
                 # encoder lstm cell
                 if t == 0:
                     enc_lstm_state = self._enc_lstm.get_initial_state(encoded_imgs[:, None])
                 enc_out, enc_lstm_state = self._enc_lstm.cell(encoded_imgs, enc_lstm_state)
 
                 # decoder attention
+                enc_out = _cast_down(enc_out, hparams)
                 flatten_enc = tf.reshape(enc_out, (B, -1))
                 if t == 0:
                     previous_encs = [flatten_enc]
@@ -62,7 +80,8 @@ class VGGConvGraph(BaseGraph):
                     attention_weights = tf.nn.softmax(tf.concat(dot_prods, axis=1), axis=1)
                     attention_enc = tf.reduce_sum(attention_weights[:, :, None] * tf.concat([p[:, None] for p in previous_encs], 1), 1)
                     attention_enc = tf.reshape(attention_enc, [B, int(H // 8), int(W // 8), hparams.lstm_filters])
-                
+                attention_enc = _cast_up(attention_enc)
+
                 # decoder lstm cell
                 if t == 0:
                     dec_lstm_state = self._dec_lstm.get_initial_state(attention_enc[:, None])
@@ -72,12 +91,14 @@ class VGGConvGraph(BaseGraph):
                 if t < hparams.context_frames - 1:   # no frame predictions for extra context frames
                     continue
                 
-                decoder_out = dec_lstm_out
+                decoder_out = _cast_down(dec_lstm_out, hparams)
                 for op in self._dec_ops:
                     decoder_out = op(decoder_out)
                     if isinstance(op, layers.Conv2D):
+                        decoder_out = _cast_up(decoder_out)
                         decoder_out = tf.contrib.layers.instance_norm(decoder_out, activation_fn=tf.nn.relu, 
                                                                         scope='norm{}'.format(norm_ctr), reuse = t >= hparams.context_frames)
+                        decoder_out = _cast_down(decoder_out, hparams)
                         norm_ctr += 1
 
                 # predict flows
@@ -91,9 +112,9 @@ class VGGConvGraph(BaseGraph):
 
                     masks = tf.expand_dims(tf.nn.softmax(self._mask_top(mask_convs)), axis=-2)
 
-                    outputs['gen_images'] = outputs.get('gen_images', []) + [tf.reduce_sum(warped_images * masks, axis=-1)]
+                    outputs['gen_images'] = outputs.get('gen_images', []) + [_cast_up(tf.reduce_sum(warped_images * masks, axis=-1))]
                 else:
-                    outputs['gen_images'] = outputs.get('gen_images', []) + [self._top(decoder_out)]
+                    outputs['gen_images'] = outputs.get('gen_images', []) + [_cast_up(self._top(decoder_out))]
 
             outputs['gen_images'] = tf.concat([pred[None] for pred in outputs['gen_images']], 0)
             outputs['ground_truth_sampling_mean'] = tf.reduce_mean(tf.to_float(self._ground_truth[hparams.context_frames:]))
@@ -206,5 +227,7 @@ class VGGConvGraph(BaseGraph):
             'schedule_sampling': "inverse_sigmoid",
             'schedule_sampling_k': 900.0,
             'schedule_sampling_steps': [0, 100000],
+
+            "float16": False                        # float 16 is very unstable at the moment
         }
         return dict(itertools.chain(BaseGraph.default_hparams().items(), default_params.items()))
