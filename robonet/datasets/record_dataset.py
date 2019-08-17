@@ -9,7 +9,7 @@ import json
 from robonet.datasets.util.dataset_utils import color_augment
 
 
-class TPUVideoDataset(BaseVideoDataset):
+class TFRecordVideoDataset(BaseVideoDataset):
     def __init__(self, dataset_batches, dataset_paths, hparams=dict()):
         self._hparams = self._get_default_hparams().override_from_dict(hparams)                 # initialize hparams and store metadata_frame
         self._init_rng()                                                                        # init rng objects

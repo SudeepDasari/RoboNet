@@ -14,8 +14,8 @@ def get_dataset_class(name):
     elif name == 'HeldoutRobotDataset':
         from .variants.val_filter_dataset_variants import HeldoutRobotDataset
         return HeldoutRobotDataset
-    elif name == 'TPU':
-        from .tpu_dataset import TPUVideoDataset
-        return TPUVideoDataset
+    elif name == 'TPU' or name == 'TFRecords':
+        from .record_dataset import TFRecordVideoDataset
+        return TFRecordVideoDataset
     else:
         raise NotImplementedError
