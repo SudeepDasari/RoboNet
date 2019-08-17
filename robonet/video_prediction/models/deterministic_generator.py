@@ -36,7 +36,6 @@ class DeterministicModel(BaseModel):
             "lr": 0.001,
             "end_lr": 0.0,
             "decay_steps": (200000, 300000),
-            "max_steps": 300000,
             "beta1": 0.9,
             "beta2": 0.999,
             'l1_weight': 1.0,

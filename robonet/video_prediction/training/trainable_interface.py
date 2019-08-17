@@ -19,7 +19,7 @@ class VPredTrainable(Trainable):
         self.dataset_hparams, self.model_hparams, self._hparams = self._extract_hparams(config)
         inputs, targets = self._make_dataloaders(config)
 
-        PredictionModel = get_model(self.model_hparams.pop('model'))
+        PredictionModel = self._get_model_class(self.model_hparams.pop('model'))
         self._model = model = PredictionModel(self._data_loader.hparams, self._hparams.n_gpus, self._hparams.graph_type, False)
         est, s_m, t_m = model.model_fn(inputs, targets, tf.estimator.ModeKeys.TRAIN, self.model_hparams)
         self._estimator, self._scalar_metrics, self._tensor_metrics = est, s_m, t_m
@@ -54,6 +54,12 @@ class VPredTrainable(Trainable):
             'max_steps': 300000,
         }
         return HParams(**default_dict)
+
+    def _get_dataset_class(self, class_name):
+        return get_dataset_class(class_name)
+    
+    def _get_model_class(self, class_name):
+        return get_model(class_name)
 
     def _extract_hparams(self, config):
         """
@@ -98,7 +104,7 @@ class VPredTrainable(Trainable):
         return inputs, targets
     
     def _make_dataloaders(self, config):
-        DatasetClass = get_dataset_class(self.dataset_hparams.pop('dataset'))
+        DatasetClass = self._get_dataset_class(self.dataset_hparams.pop('dataset'))
         sources, self.dataset_hparams['source_selection_probabilities'] = self._init_sources()
         
         inputs, targets = self._get_input_targets(DatasetClass, sources, self.dataset_hparams)

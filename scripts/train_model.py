@@ -1,5 +1,5 @@
 import argparse
-from robonet.video_prediction.training import GIFLogger, get_trainable, TFImageLogger
+from robonet import GIFLogger, get_trainable, TFImageLogger
 import tensorflow as tf
 import ray
 import ray.tune as tune
@@ -40,7 +40,7 @@ if __name__ == '__main__':
         name = args.name
         config.pop('name', None)
     else:
-        name = config.pop('name', "{}_video_prediction_training".format(os.getlogin()))
+        name = config.pop('name', "{}_training".format(os.getlogin()))
 
     exp = tune.Experiment(
                 name=name,

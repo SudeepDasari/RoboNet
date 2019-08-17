@@ -16,4 +16,3 @@ class BaseGraph:
     @property
     def vars(self):
         return tf.trainable_variables(self._scope_name)
-
