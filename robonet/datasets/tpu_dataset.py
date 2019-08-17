@@ -6,6 +6,7 @@ from robonet.datasets.base_dataset import BaseVideoDataset
 import random
 import functools
 import json
+from robonet.datasets.util.dataset_utils import color_augment
 
 
 class TPUVideoDataset(BaseVideoDataset):
@@ -55,6 +56,8 @@ class TPUVideoDataset(BaseVideoDataset):
                 # enforces static shapes constraint
                 height, width = dataset_metadata['img_dim']
                 outputs['images'] = tf.cast(tf.reshape(outputs['images'], [batch_size, self._hparams.load_T, height, width, 3]), tf.float32) / 255
+                if self._hparams.color_augmentation:
+                    outputs['images'] = color_augment(outputs['images'], self._hparams.color_augmentation)
                 outputs['actions'] = tf.reshape(outputs['actions'], [batch_size, self._hparams.load_T - 1, dataset_metadata['adim']])
                 outputs['states'] = tf.reshape(outputs['states'], [batch_size, self._hparams.load_T, dataset_metadata['adim']])
 
@@ -121,7 +124,8 @@ class TPUVideoDataset(BaseVideoDataset):
             'buffer_size': 10,
             'train_frac': 0.9,                  # train, val
             'load_T': 15,
-            'bucket_dir': ''
+            'bucket_dir': '',
+            'color_augmentation': 0
         }
         return HParams(**default_dict)
     
