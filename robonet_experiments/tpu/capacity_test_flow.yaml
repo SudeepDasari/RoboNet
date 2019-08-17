@@ -1,0 +1,23 @@
+# general experiment and batch configs
+data_directory: ${DATA_DIR}
+save_dir: "model_save_large_lbls_flow"
+batch_sizes: [16]
+max_steps: 600000
+
+# loader_hparams used to initialize loader object
+loader_hparams:
+  load_T: 15
+  
+# model_hparams used to create graph and loss function
+model_hparams:
+  model: deterministic
+  graph_type: vgg_conv
+  tv_weight: 0
+  lr: 0.0001
+  context_frames: 4
+  enc_filters: [512, 1024, 1664]
+  lstm_filters: 1664
+  dec_filters: [1024, 512]
+  schedule_sampling_k: 4000
+  img_flows: 256
+  skip_flows: 32
