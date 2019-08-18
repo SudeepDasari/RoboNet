@@ -1,4 +1,4 @@
-batch_size: 128
+batch_size: 16
 train_class: InverseTrainable 
 max_steps: 300000
 
@@ -13,10 +13,11 @@ batch_config:
 loader_hparams:
   dataset: "RoboNet"
   buffer_size: 10
-  load_T: 10
+  load_T: 5
   color_augmentation: 0.1
 
 # model_hparams used to create graph and loss function
 model_hparams:
   model: DeterministicInverseModel
   graph_type: lstm_baseline
+  vgg_path: ${VGG_DIR}
