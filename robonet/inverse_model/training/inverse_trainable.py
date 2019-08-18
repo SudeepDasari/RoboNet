@@ -31,9 +31,9 @@ class InverseTrainable(VPredTrainable):
             start = time.time()
             train_loss = self.sess.run([loss, train_op], feed_dict=self._tensor_multiplexer.get_feed_dict('train'))[0]
             fetches['metric/step_time'] = time.time() - start
+            fetches['metric/loss/train'] = train_loss
 
             if itr % self._hparams.scalar_summary_freq == 0:
-                fetches['metric/loss/train'] = train_loss
                 fetches['metric/loss/val'] = self.sess.run(loss, feed_dict=self._tensor_multiplexer.get_feed_dict('val'))
                 for name in ['train', 'val']:
                     metrics = self.sess.run(self._scalar_metrics, feed_dict=self._tensor_multiplexer.get_feed_dict(name))

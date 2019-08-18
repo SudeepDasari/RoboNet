@@ -36,12 +36,7 @@ class LSTMBaseline(BaseGraph):
             goal_enc = encoder(inputs['goal_images'])
             start_goal_enc = tf.concat((start_enc, goal_enc), -1)
 
-            mu_logsigma = layers.Dense(hparams.latent_dim * 2 * inputs['T'])(start_goal_enc)
-            mu, log_sigma = tf.split(mu_logsigma, 2, axis=-1)
-            outputs['kl_mu'], outputs['kl_logsigma'] = mu, log_sigma
-
-            noise = tf.random.normal((mu.get_shape().as_list()[0], hparams.latent_dim * inputs['T']))
-            lstm_in = mu + noise * tf.exp(log_sigma)
+            lstm_in = layers.Dense(hparams.latent_dim * inputs['T'])(start_goal_enc)
             lstm_in = tf.reshape(lstm_in, (-1, inputs['T'], hparams.latent_dim))
             lstm_out = layers.LSTM(hparams.lstm_dim, return_sequences=True)(lstm_in)
 
