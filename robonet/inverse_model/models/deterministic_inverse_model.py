@@ -23,9 +23,13 @@ class DeterministicInverseModel(BaseInverseModel):
         inputs, targets = {}, None
         inputs['start_images'] = model_targets['images'][:, 0]
         inputs['goal_images'] = model_targets['images'][:, -1]
-        inputs['T'] = model_inputs['actions'].get_shape().as_list()[1]
-        inputs['adim'] = model_inputs['actions'].get_shape().as_list()[2]
-        targets = model_inputs['actions']
+        if mode == tf.estimator.ModeKeys.TRAIN:
+            inputs['T'] = model_inputs['actions'].get_shape().as_list()[1]
+            inputs['adim'] = model_inputs['actions'].get_shape().as_list()[2]
+            targets = model_inputs['actions']
+        else:
+            inputs['adim'] = model_inputs['adim']
+            inputs['T'] = model_inputs['T']
 
         # build the graph
         self._model_graph = model_graph = self._graph_class()
@@ -49,5 +53,5 @@ class DeterministicInverseModel(BaseInverseModel):
             return est, {}, {}
             
         #test
-        raise NotImplementedError
+        return outputs['pred_actions']
 

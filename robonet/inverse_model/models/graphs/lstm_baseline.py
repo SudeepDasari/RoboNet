@@ -41,7 +41,7 @@ class LSTMBaseline(BaseGraph):
         outputs = {}
         with tf.variable_scope(scope_name) as graph_scope:
             encoder = ImageEncoder(hparams.spec, hparams.kernel_size, hparams.enc_dim, hparams.vgg_path)
-
+            import pdb; pdb.set_trace()
             start_enc = encoder(inputs['start_images'])
             goal_enc = encoder(inputs['goal_images'])
             start_goal_enc = tf.concat((start_enc, goal_enc), -1)
