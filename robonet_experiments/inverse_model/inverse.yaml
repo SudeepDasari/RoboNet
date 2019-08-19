@@ -1,6 +1,6 @@
 batch_size: 16
 train_class: InverseTrainable 
-max_steps: 300000
+max_steps: 100000
 
 # list of dictionaries containing data sources along with filter parameters
 batch_config:
@@ -13,7 +13,7 @@ batch_config:
 loader_hparams:
   dataset: "RoboNet"
   buffer_size: 10
-  load_T: 5
+  load_T: search/grid([3, 5, 7, 9, 11, 13, 15])
   color_augmentation: 0.1
 
 # model_hparams used to create graph and loss function
