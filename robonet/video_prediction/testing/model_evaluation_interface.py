@@ -1,5 +1,5 @@
 import ray
-from robonet.video_prediction.models import get_model_fn
+from robonet.video_prediction.models import get_model
 import numpy as np
 import json
 from robonet.video_prediction.utils import tf_utils
@@ -18,6 +18,7 @@ class VPredEvaluation(object):
         if model_hparams_path[:2] == '~/':
             model_hparams_path = os.path.expanduser(model_hparams_path)
         loaded_json = json.load(open(model_hparams_path, 'r'))
+        dataset_hparams = {}
         if "checkpoints" in loaded_json:
             self._model_hparams = loaded_json['checkpoints'][0]["config"]['model_hparams']
             dataset_hparams = loaded_json['checkpoints'][0]["config"]['dataset_hparams']
@@ -31,10 +32,11 @@ class VPredEvaluation(object):
         for k, v in self._model_hparams.items():
             print('{} --> {}'.format(k, v))
         print('---------------------------------------------------------------------------------------\n\n')
-        graph_type = self._model_hparams.pop('graph_type')
 
-        model_fn = get_model_fn(self._model_hparams.pop('model'))
-        self._outputs = model_fn(n_gpus, graph_type, False, self._build_inputs(), None, tf.estimator.ModeKeys.PREDICT, self._model_hparams)
+        graph_type = self._model_hparams.pop('graph_type')
+        PredictionModel = get_model(self._model_hparams.pop('model'))
+        model = PredictionModel(dataset_hparams, n_gpus, graph_type, False)
+        self._outputs = model.model_fn(self._build_inputs(), None, tf.estimator.ModeKeys.PREDICT, self._model_hparams)
 
         self.sess = tf.Session()
         self.sess.run(tf.global_variables_initializer())
