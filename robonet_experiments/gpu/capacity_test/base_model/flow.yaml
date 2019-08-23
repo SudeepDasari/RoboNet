@@ -25,4 +25,4 @@ loader_hparams:
 model_hparams:
   model: deterministic
   graph_type: vgg_conv
-  tv_weight: 0
+  tv_weight: 0.0

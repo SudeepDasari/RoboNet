@@ -3,7 +3,19 @@ import itertools
 import tensorflow as tf
 import tensorflow.keras.layers as layers
 from robonet.video_prediction.flow_ops import image_warp
-from robonet.video_prediction.layers.dnaflow_rnn_cell import apply_cdna_kernels, RELU_SHIFT
+from robonet.video_prediction.layers.dnaflow_rnn_cell import RELU_SHIFT
+
+
+def apply_cdna_kernels(image, kernels):
+    IMG_H, IMG_W = image.get_shape().as_list()[1:3]
+    B, H, _, N = kernels.get_shape().as_list()
+    kernels = tf.transpose(kernels, (2, 1, 0, 3))
+    image = tf.transpose(image, (3, 1, 2, 0))
+
+    out_image = tf.nn.depthwise_conv2d(image, kernels, [1, 1, 1, 1], 'SAME')
+    out_image = tf.reshape(out_image, (3, IMG_H, IMG_W, B, N))
+    out_image = tf.transpose(out_image, (3, 1, 2, 4, 0))
+    return out_image
 
 
 def _cast_down(tensor, hparams):
@@ -115,16 +127,16 @@ class VGGConvGraph(BaseGraph):
 
                     warped_images = []
                     if hparams.skip_flows:
-                        warped_images = [tf.stack(apply_cdna_kernels(inputs['images'][t_index], 
-                                                kernels[:, :, :, t_index * hparams.skip_flows: (t_index + 1) * hparams.skip_flows]), axis=-1) 
+                        warped_images = [apply_cdna_kernels(inputs['images'][t_index], 
+                                                kernels[:, :, :, t_index * hparams.skip_flows: (t_index + 1) * hparams.skip_flows])
                                                 for t_index in range(hparams.context_frames)]
                     img_flow_kernels = kernels[:, :, :, hparams.context_frames * hparams.skip_flows:]
-                    warped_images.append(tf.stack(apply_cdna_kernels(input_image, img_flow_kernels), axis=-1))
-                    warped_images = tf.concat(warped_images, axis=-1)
+                    warped_images.append(apply_cdna_kernels(input_image, img_flow_kernels))
+                    warped_images = tf.concat(warped_images, axis=-2)
 
-                    masks = tf.expand_dims(tf.nn.softmax(self._mask_top(mask_convs)), axis=-2)
+                    masks = tf.expand_dims(tf.nn.softmax(self._mask_top(mask_convs)), axis=-1)
 
-                    outputs['gen_images'] = outputs.get('gen_images', []) + [_cast_up(tf.reduce_sum(warped_images * masks, axis=-1))]
+                    outputs['gen_images'] = outputs.get('gen_images', []) + [_cast_up(tf.reduce_sum(warped_images * masks, axis=-2))]
                 else:
                     outputs['gen_images'] = outputs.get('gen_images', []) + [_cast_up(self._top(decoder_out))]
 
