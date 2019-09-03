@@ -2,20 +2,41 @@ from .base_graph import BaseGraph
 import itertools
 import tensorflow as tf
 import tensorflow.keras.layers as layers
-from robonet.video_prediction.flow_ops import image_warp
 from robonet.video_prediction.layers.dnaflow_rnn_cell import RELU_SHIFT
+from robonet.video_prediction.ops import pad2d
 
 
-def apply_cdna_kernels(image, kernels):
-    IMG_H, IMG_W = image.get_shape().as_list()[1:3]
-    B, H, _, N = kernels.get_shape().as_list()
-    kernels = tf.transpose(kernels, (2, 1, 0, 3))
-    image = tf.transpose(image, (3, 1, 2, 0))
+def apply_cdna_kernels(image, kernels, dilation_rate=(1, 1)):
+    """
+    Args:
+        image: A 4-D tensor of shape
+            `[batch, in_height, in_width, in_channels]`.
+        kernels: A 4-D of shape
+            `[batch, kernel_size[0], kernel_size[1], num_transformed_images]`.
 
-    out_image = tf.nn.depthwise_conv2d(image, kernels, [1, 1, 1, 1], 'SAME')
-    out_image = tf.reshape(out_image, (3, IMG_H, IMG_W, B, N))
-    out_image = tf.transpose(out_image, (3, 1, 2, 4, 0))
-    return out_image
+    Returns:
+        A list of `num_transformed_images` 4-D tensors, each of shape
+            `[batch, in_height, in_width, in_channels]`.
+    """
+    batch_size, height, width, color_channels = image.get_shape().as_list()
+    batch_size, kernel_height, kernel_width, num_transformed_images = kernels.get_shape().as_list()
+    kernel_size = [kernel_height, kernel_width]
+    image_padded = pad2d(image, kernel_size, rate=dilation_rate, padding='SAME', mode='CONSTANT')
+    # Treat the color channel dimension as the batch dimension since the same
+    # transformation is applied to each color channel.
+    # Treat the batch dimension as the channel dimension so that
+    # depthwise_conv2d can apply a different transformation to each sample.
+    kernels = tf.transpose(kernels, [1, 2, 0, 3])
+    kernels = tf.reshape(kernels, [kernel_size[0], kernel_size[1], batch_size, num_transformed_images])
+    # Swap the batch and channel dimensions.
+    image_transposed = tf.transpose(image_padded, [3, 1, 2, 0])
+    # Transform image.
+    outputs = tf.nn.depthwise_conv2d(image_transposed, kernels, [1, 1, 1, 1], padding='VALID', rate=dilation_rate)
+    # Transpose the dimensions to where they belong.
+    outputs = tf.reshape(outputs, [color_channels, height, width, batch_size, num_transformed_images])
+    outputs = tf.transpose(outputs, [3, 1, 2, 4, 0])
+
+    return outputs
 
 
 def _cast_down(tensor, hparams):
