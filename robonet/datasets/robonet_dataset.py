@@ -197,11 +197,11 @@ class RoboNetDataset(BaseVideoDataset):
 
             try:
                 batches = self._pool.map_async(_load_data, batch_jobs).get(timeout=self._hparams.pool_timeout)
-            except TimeoutError:
-                self._pool.terminate()
-                self._pool.close()
-                self._pool = multiprocessing.Pool(self._n_workers)
-                self._n_pool_resets += 1
+            except:
+                # self._pool.terminate()
+                # self._pool.close()
+                # self._pool = multiprocessing.Pool(self._n_workers)
+                # self._n_pool_resets += 1
                 batches = [_load_data(job) for job in batch_jobs]
 
             ret_vals = []

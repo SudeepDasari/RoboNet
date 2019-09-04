@@ -19,5 +19,5 @@ model_hparams:
   lstm_filters: 1664
   dec_filters: [1024, 512]
   schedule_sampling_k: 4000
-  img_flows: 256
+  img_flows: 96
   skip_flows: 32

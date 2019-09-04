@@ -2,8 +2,41 @@ from .base_graph import BaseGraph
 import itertools
 import tensorflow as tf
 import tensorflow.keras.layers as layers
-from robonet.video_prediction.flow_ops import image_warp
-from robonet.video_prediction.layers.dnaflow_rnn_cell import apply_cdna_kernels, RELU_SHIFT
+from robonet.video_prediction.layers.dnaflow_rnn_cell import RELU_SHIFT
+from robonet.video_prediction.ops import pad2d
+
+
+def apply_cdna_kernels(image, kernels, dilation_rate=(1, 1)):
+    """
+    Args:
+        image: A 4-D tensor of shape
+            `[batch, in_height, in_width, in_channels]`.
+        kernels: A 4-D of shape
+            `[batch, kernel_size[0], kernel_size[1], num_transformed_images]`.
+
+    Returns:
+        A list of `num_transformed_images` 4-D tensors, each of shape
+            `[batch, in_height, in_width, in_channels]`.
+    """
+    batch_size, height, width, color_channels = image.get_shape().as_list()
+    batch_size, kernel_height, kernel_width, num_transformed_images = kernels.get_shape().as_list()
+    kernel_size = [kernel_height, kernel_width]
+    image_padded = pad2d(image, kernel_size, rate=dilation_rate, padding='SAME', mode='CONSTANT')
+    # Treat the color channel dimension as the batch dimension since the same
+    # transformation is applied to each color channel.
+    # Treat the batch dimension as the channel dimension so that
+    # depthwise_conv2d can apply a different transformation to each sample.
+    kernels = tf.transpose(kernels, [1, 2, 0, 3])
+    kernels = tf.reshape(kernels, [kernel_size[0], kernel_size[1], batch_size, num_transformed_images])
+    # Swap the batch and channel dimensions.
+    image_transposed = tf.transpose(image_padded, [3, 1, 2, 0])
+    # Transform image.
+    outputs = tf.nn.depthwise_conv2d(image_transposed, kernels, [1, 1, 1, 1], padding='VALID', rate=dilation_rate)
+    # Transpose the dimensions to where they belong.
+    outputs = tf.reshape(outputs, [color_channels, height, width, batch_size, num_transformed_images])
+    outputs = tf.transpose(outputs, [3, 1, 2, 4, 0])
+
+    return outputs
 
 
 def _cast_down(tensor, hparams):
@@ -115,16 +148,16 @@ class VGGConvGraph(BaseGraph):
 
                     warped_images = []
                     if hparams.skip_flows:
-                        warped_images = [tf.stack(apply_cdna_kernels(inputs['images'][t_index], 
-                                                kernels[:, :, :, t_index * hparams.skip_flows: (t_index + 1) * hparams.skip_flows]), axis=-1) 
+                        warped_images = [apply_cdna_kernels(inputs['images'][t_index], 
+                                                kernels[:, :, :, t_index * hparams.skip_flows: (t_index + 1) * hparams.skip_flows])
                                                 for t_index in range(hparams.context_frames)]
                     img_flow_kernels = kernels[:, :, :, hparams.context_frames * hparams.skip_flows:]
-                    warped_images.append(tf.stack(apply_cdna_kernels(input_image, img_flow_kernels), axis=-1))
-                    warped_images = tf.concat(warped_images, axis=-1)
+                    warped_images.append(apply_cdna_kernels(input_image, img_flow_kernels))
+                    warped_images = tf.concat(warped_images, axis=-2)
 
-                    masks = tf.expand_dims(tf.nn.softmax(self._mask_top(mask_convs)), axis=-2)
+                    masks = tf.expand_dims(tf.nn.softmax(self._mask_top(mask_convs)), axis=-1)
 
-                    outputs['gen_images'] = outputs.get('gen_images', []) + [_cast_up(tf.reduce_sum(warped_images * masks, axis=-1))]
+                    outputs['gen_images'] = outputs.get('gen_images', []) + [_cast_up(tf.reduce_sum(warped_images * masks, axis=-2))]
                 else:
                     outputs['gen_images'] = outputs.get('gen_images', []) + [_cast_up(self._top(decoder_out))]
 
