@@ -21,12 +21,12 @@ class DeterministicInverseModel(BaseInverseModel):
 
     def _model_fn(self, model_inputs, model_targets, mode):
         inputs, targets = {}, None
-        inputs['start_images'] = model_targets['images'][:, 0]
-        inputs['goal_images'] = model_targets['images'][:, -1]
+        inputs['start_images'] = model_inputs['images'][:, 0]
+        inputs['goal_images'] = model_inputs['images'][:, -1]
         if mode == tf.estimator.ModeKeys.TRAIN:
-            inputs['T'] = model_inputs['actions'].get_shape().as_list()[1]
-            inputs['adim'] = model_inputs['actions'].get_shape().as_list()[2]
-            targets = model_inputs['actions']
+            inputs['T'] = model_targets['actions'].get_shape().as_list()[1]
+            inputs['adim'] = model_targets['actions'].get_shape().as_list()[2]
+            targets = model_targets['actions']
         else:
             inputs['adim'] = model_inputs['adim']
             inputs['T'] = model_inputs['T']
