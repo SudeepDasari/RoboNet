@@ -24,7 +24,6 @@ class InverseTrainable(VPredTrainable):
     
     def _get_input_targets(self, DatasetClass, metadata, dataset_hparams):
         data_loader = DatasetClass(self._hparams.batch_size, metadata, dataset_hparams)
-        assert data_loader.hparams.get('load_random_cam', False), "function assumes loader will grab one random camera feed in multi-cam object"
 
         tensor_names = ['actions', 'images', 'states']
         if 'annotations' in data_loader:
@@ -34,6 +33,7 @@ class InverseTrainable(VPredTrainable):
         loaded_tensors = [self._tensor_multiplexer[k] for k in tensor_names]
         
         self._real_annotations = None
+        assert loaded_tensors[1].get_shape().as_list()[2] == 1, "loader assumes one (potentially random) camera will be loaded in each example!"
         self._real_images = loaded_tensors[1] = loaded_tensors[1][:, :, 0]              # grab cam 0 for images
         if 'annotations' in data_loader:
             self._real_annotations = loaded_tensors[3] = loaded_tensors[3][:, :, 0]     # grab cam 0 for annotations

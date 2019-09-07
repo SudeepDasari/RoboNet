@@ -5,3 +5,6 @@ from robonet.inverse_model.models.graphs import get_graph_class
 class BaseInverseModel(BaseModel):
     def _get_graph(self, graph_type):
         return get_graph_class(graph_type)
+
+    def _default_scope(self):
+        return 'inverse_model'

@@ -26,7 +26,7 @@ class DeterministicInverseModel(BaseInverseModel):
         if mode == tf.estimator.ModeKeys.TRAIN:
             inputs['T'] = model_targets['actions'].get_shape().as_list()[1]
             inputs['adim'] = model_targets['actions'].get_shape().as_list()[2]
-            targets = model_targets['actions']
+            inputs['real_actions'] = targets = model_targets['actions']
         else:
             inputs['adim'] = model_inputs['adim']
             inputs['T'] = model_inputs['T']
@@ -50,7 +50,10 @@ class DeterministicInverseModel(BaseInverseModel):
             g_train_op = optimizer.minimize(loss, global_step=global_step)
             
             est = tf.estimator.EstimatorSpec(mode, loss=loss, train_op=g_train_op)
-            return est, {}, {}
+            scalar_summaries = {}
+            if 'ground_truth_sampling_mean' in outputs:
+                scalar_summaries['ground_truth_sampling_mean'] = outputs['ground_truth_sampling_mean']
+            return est, scalar_summaries, {}
             
         #test
         return outputs['pred_actions']

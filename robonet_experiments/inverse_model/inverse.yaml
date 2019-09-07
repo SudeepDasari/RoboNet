@@ -2,6 +2,7 @@ batch_size: 16
 train_class: InverseTrainable 
 max_steps: 300000
 
+
 # list of dictionaries containing data sources along with filter parameters
 batch_config:
   # selects sawyer data with autograsp enabled (adim=4, robot=sawyer)
@@ -13,8 +14,10 @@ batch_config:
 loader_hparams:
   dataset: "RoboNet"
   buffer_size: 10
-  load_T: 5
-  color_augmentation: 0.1
+  load_T: 2
+  load_random_cam: False
+#  color_augmentation: 0.1
+  img_size: [192, 256] 
 
 # model_hparams used to create graph and loss function
 model_hparams:
