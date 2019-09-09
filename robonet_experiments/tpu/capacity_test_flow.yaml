@@ -1,8 +1,9 @@
 # general experiment and batch configs
 data_directory: ${DATA_DIR}
-save_dir: "model_save_large_lbls_flow"
-batch_sizes: [16]
+save_dir: "model_save_large_lbls_flow_multibot"
+batch_sizes: [4, 4, 4, 4]
 max_steps: 600000
+robots: ["sawyer"]
 
 # loader_hparams used to initialize loader object
 loader_hparams:
@@ -19,5 +20,5 @@ model_hparams:
   lstm_filters: 1664
   dec_filters: [1024, 512]
   schedule_sampling_k: 4000
-  img_flows: 96
-  skip_flows: 32
+  img_flows: 48
+  skip_flows: 16
