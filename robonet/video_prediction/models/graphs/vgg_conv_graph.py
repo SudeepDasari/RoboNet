@@ -252,10 +252,6 @@ class VGGConvGraph(BaseGraph):
         ground_truth_context = tf.constant(True, dtype=tf.bool, shape=[hparams.context_frames, B])
         self._ground_truth = tf.concat([ground_truth_context, ground_truth_sampling], axis=0)
 
-    @property
-    def vars(self):
-        return tf.trainable_variables(self._scope_name)
-
     @staticmethod
     def default_hparams():
         default_params =  {

@@ -1,0 +1,23 @@
+batch_size: 16
+train_class: InverseTrainable 
+max_steps: 300000
+
+# list of dictionaries containing data sources along with filter parameters
+batch_config:
+  # selects sawyer data with autograsp enabled (adim=4, robot=sawyer)
+  - data_directory: ${DATA_DIR}/hdf5
+    robot: "sawyer"
+    adim: 4
+
+# loader_hparams used to initialize loader object
+loader_hparams:
+  dataset: "RoboNet"
+  buffer_size: 10
+  load_T: 5
+  color_augmentation: 0.1
+
+# model_hparams used to create graph and loss function
+model_hparams:
+  model: DeterministicInverseModel
+  graph_type: lstm_baseline
+  vgg_path: ${VGG_DIR}

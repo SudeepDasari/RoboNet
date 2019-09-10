@@ -8,10 +8,13 @@ class BaseModel(object):
     def __init__(self, data_loader_hparams, num_gpus, graph_type, tpu_mode=False, graph_scope='vpred_model'):
         self._data_hparams = data_loader_hparams
         self._num_gpus = num_gpus
-        self._graph_class = get_graph_class(graph_type)
+        self._graph_class = self._get_graph(graph_type)
         self._tpu_mode = tpu_mode
         self._graph_scope = graph_scope
     
+    def _get_graph(self, graph_type):
+        return get_graph_class(graph_type)
+
     def init_default_hparams(self, params):
         graph_params = self._graph_class.default_hparams()
         model_hparams = self._model_default_hparams()
