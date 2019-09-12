@@ -1,71 +1,83 @@
 import ray
 from robonet.inverse_model.models import get_models
 import numpy as np
-import json
 from robonet.video_prediction.utils import tf_utils
 import tensorflow as tf
 from tensorflow.contrib.training import HParams
 import os
+import glob
 import math
+import yaml
 
 
 class ActionInferenceInterface(object):
-    def __init__(self, model_hparams_path, test_hparams, n_gpus=1, first_gpu=0):
+    def __init__(self, model_path, test_hparams={}, n_gpus=1, first_gpu=0, sess=None):
         assert n_gpus == 1, "multi gpu evaluation not yet written"
         assert first_gpu == 0, "only starts building at gpu0"
         
         self._test_hparams = self._default_hparams().override_from_dict(test_hparams)
+        self._model_path = model_path
 
-        model_hparams_path = os.path.expanduser(model_hparams_path)
-        loaded_json = json.load(open(model_hparams_path, 'r'))
-        if "checkpoints" in loaded_json:
-            self._model_hparams = loaded_json['checkpoints'][0]["config"]['model_hparams']
-            dataset_hparams = loaded_json['checkpoints'][0]["config"]['loader_hparams']
-            assert dataset_hparams.get('target_adim', 4)  == self._test_hparams.adim
-        else:
-            self._model_hparams = loaded_json
-            dataset_hparams = {}
-            print('no dataset hparams found - there is no way to detect adim mismatch errors')
+        config_path = glob.glob(os.path.expanduser(model_path) + '/*.yaml')
+        assert len(config_path) == 1, "there should be one yaml file with params inside model_path but instead {} were found!".format(len(config_path))
+        config_path = config_path[0]
+
+        with open(config_path) as config:
+            params = yaml.load(config, Loader=yaml.SafeLoader)
+            self._model_hparams = params['model']
+            self._input_hparams = params['dataset']
+
+        # ensure vgg weights are restored correctly (a bit hacky for now)
+        self._model_hparams['vgg_path'] = os.path.expanduser(self._test_hparams.vgg_path)
 
         print('\n\n------------------------------------ LOADED PARAMS ------------------------------------')
         for k, v in self._model_hparams.items():
             print('{} --> {}'.format(k, v))
+        for k, v in self._input_hparams.items():
+            print('{} --> {}'.format(k, v))
         print('---------------------------------------------------------------------------------------\n\n')
         
-        PredictionModel = get_models(self._model_hparams.pop('model'))
-        self._model_hparams['vgg_path'] = os.path.expanduser(self._test_hparams.vgg_path)
-        self._model = model = PredictionModel(dataset_hparams, n_gpus, self._model_hparams['graph_type'], False)
+        InverseModel = get_models(self._model_hparams.pop('model'))
+        self._model = model = InverseModel(self._input_hparams, n_gpus, self._model_hparams['graph_type'], False, self._model_hparams.pop('scope_name'))
         inputs, targets = self._build_input_targets()
         self._pred_act= model.model_fn(inputs, targets, tf.estimator.ModeKeys.PREDICT, self._model_hparams)
         
-        self.sess = tf.Session()
-        self.sess.run(tf.global_variables_initializer())
+        self._sess = sess
         self._restored = False
     
     def _default_hparams(self):
         default_dict = {
-            "img_dims": [48, 64],
-            "adim": 4,
-            "load_T": 10,
+            "run_batch_size": 16,
             "vgg_path": "~/"                # vgg19.npy should be in vgg_path folder (aka vgg_path = /path/to/folder/containing/weights/)
         }
         return HParams(**default_dict)
     
     def _build_input_targets(self):
-        height, width = self._test_hparams.img_dims
-        self._images_pl = tf.placeholder(tf.float32, [1, 2, height, width, 3])
-        return {'adim': self._test_hparams.adim, 'T': self._test_hparams.load_T - 1}, {'images': self._images_pl}
+        height, width = self._input_hparams['img_size']
+        self._images_pl = tf.placeholder(tf.float32, [self._test_hparams.run_batch_size, 2, height, width, 3])
+        return {'adim': self._input_hparams['target_adim'], 'T': self._input_hparams['load_T'] - 1, 'images': self._images_pl}, {}
     
     def predict(self, start_image, goal_image):
         assert self._restored
-        start_goal_image = np.concatenate((start_image[None][None], goal_image[None][None]), axis=1)
-        return self.sess.run(self._pred_act, feed_dict={self._images_pl: start_goal_image})
+        start_goal_image = np.concatenate((start_image[:, None], goal_image[:, None]), axis=1)
+        return self._sess.run(self._pred_act, feed_dict={self._images_pl: start_goal_image})
     
     def __call__(self, start_image, goal_image):
         return self.predict(start_image, goal_image)
 
-    def restore(self, restore_path):
-        restore_path = os.path.expanduser(restore_path)
+    def set_session(self, sess):
+        self._sess = sess
+
+    def restore(self):
+        if self._sess is None:
+            self._sess = tf.Session()
+            self._sess.run(tf.global_variables_initializer())
+
+        model_paths = glob.glob('{}/model-*'.format(self._model_path))
+        max_model = max([int(m.split('.')[0].split('-')[-1]) for m in model_paths])
+        restore_path = os.path.join(self._model_path, 'model-' + str(max_model))
+        print('restoring', restore_path)
+        
         checkpoints = [restore_path]
         # automatically skip global_step if more than one checkpoint is provided
         skip_global_step = len(checkpoints) > 1
@@ -75,16 +87,9 @@ class ActionInferenceInterface(object):
             saver, _ = tf_utils.get_checkpoint_restore_saver(checkpoint, skip_global_step=skip_global_step)
             savers.append(saver)
         restore_op = [saver.saver_def.restore_op_name for saver in savers]
-        self.sess.run(restore_op)
+        self._sess.run(restore_op)
         self._restored = True
-
-
-if __name__ == '__main__':
-    test_hparams = {"load_T": 3}                                                                  # test hparams overrides, make sure you set load_T to the value used during training
-    inference_object = ActionInferenceInterface('~/model_test/hparams.json', test_hparams)        # experiment_state...json file from ray
-    inference_object.restore('~/model_test/checkpoint_100000/model-100000')
-
-    start_image = np.zeros((48, 64, 3))
-    goal_image = np.zeros((48, 64, 3))
-    import pdb; pdb.set_trace()
-    print(inference_object(start_image, goal_image))
+    
+    @property
+    def T(self):
+        return self._input_hparams['load_T'] - 1

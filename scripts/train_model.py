@@ -3,7 +3,7 @@ from robonet import GIFLogger, get_trainable, TFImageLogger
 import tensorflow as tf
 import ray
 import ray.tune as tune
-from yaml_util import parse_tune_config as parse_config
+from robonet.yaml_util import parse_tune_config as parse_config
 import os
 
 

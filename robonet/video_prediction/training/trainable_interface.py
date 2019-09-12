@@ -11,6 +11,7 @@ from .util import pad_and_concat, render_dist, pad, stbmajor
 import time
 import glob
 from robonet.datasets.util.tensor_multiplexer import MultiplexedTensors
+import yaml
 
 
 class VPredTrainable(Trainable):
@@ -19,7 +20,8 @@ class VPredTrainable(Trainable):
         self.dataset_hparams, self.model_hparams, self._hparams = self._extract_hparams(config)
         inputs, targets = self._make_dataloaders(config)
 
-        PredictionModel = self._get_model_class(self.model_hparams.pop('model'))
+        self._model_name = self.model_hparams.pop('model')
+        PredictionModel = self._get_model_class(self._model_name)
         self._model = model = PredictionModel(self._data_loader.hparams, self._hparams.n_gpus, self._hparams.graph_type, False)
         est, s_m, t_m = model.model_fn(inputs, targets, tf.estimator.ModeKeys.TRAIN, self.model_hparams)
         self._estimator, self._scalar_metrics, self._tensor_metrics = est, s_m, t_m
@@ -82,7 +84,6 @@ class VPredTrainable(Trainable):
 
     def _get_input_targets(self, DatasetClass, metadata, dataset_hparams):
         data_loader = DatasetClass(self._hparams.batch_size, metadata, dataset_hparams)
-        assert data_loader.hparams.get('load_random_cam', False), "function assumes loader will grab one random camera feed in multi-cam object"
 
         tensor_names = ['actions', 'images', 'states']
         if 'annotations' in data_loader:
@@ -93,6 +94,7 @@ class VPredTrainable(Trainable):
         
         self._real_annotations = None
         self._real_images = loaded_tensors[1] = loaded_tensors[1][:, :, 0]              # grab cam 0 for images
+        assert loaded_tensors[1].get_shape().as_list()[2] == 1, "loader assumes one (potentially random) camera will be loaded in each example!"
         if 'annotations' in data_loader:
             self._real_annotations = loaded_tensors[3] = loaded_tensors[3][:, :, 0]     # grab cam 0 for annotations
         
@@ -248,6 +250,14 @@ class VPredTrainable(Trainable):
         return fetches
 
     def _save(self, checkpoint_dir):
+        dataset_params = self._model.data_hparams.values()
+        model_params = self._model.model_hparams.values()
+        model_params['model'] = self._model_name
+        model_params['graph_type'] = self._hparams.graph_type
+        model_params['scope_name'] = self._model.scope_name
+
+        with open(os.path.join(checkpoint_dir, 'params.yaml'), 'w') as f:
+            yaml.dump({'model': model_params, 'dataset': dataset_params}, f)
         return self.saver.save(self.sess, os.path.join(checkpoint_dir, 'model'), global_step=self.iteration) + '.meta'
 
     def _restore(self, checkpoints):
