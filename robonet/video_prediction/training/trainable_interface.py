@@ -91,10 +91,10 @@ class VPredTrainable(Trainable):
 
         self._tensor_multiplexer = MultiplexedTensors(data_loader, tensor_names)
         loaded_tensors = [self._tensor_multiplexer[k] for k in tensor_names]
-        
+        assert loaded_tensors[1].get_shape().as_list()[2] == 1, "loader assumes one (potentially random) camera will be loaded in each example!"
+
         self._real_annotations = None
         self._real_images = loaded_tensors[1] = loaded_tensors[1][:, :, 0]              # grab cam 0 for images
-        assert loaded_tensors[1].get_shape().as_list()[2] == 1, "loader assumes one (potentially random) camera will be loaded in each example!"
         if 'annotations' in data_loader:
             self._real_annotations = loaded_tensors[3] = loaded_tensors[3][:, :, 0]     # grab cam 0 for annotations
         
