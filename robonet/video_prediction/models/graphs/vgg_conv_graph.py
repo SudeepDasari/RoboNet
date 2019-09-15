@@ -68,7 +68,7 @@ class VGGConvGraph(BaseGraph):
             dec_device = '/device:GPU:1'
 
         with tf.variable_scope(self._scope_name) as graph_scope:
-            self._init_layers(hparams, inputs, mode, enc_device, dec_device)
+            self._init_layers(hparams, inputs, mode, conv_device, lstm_device)
             T, B, H, W, C = inputs['images'].get_shape().as_list()
 
             enc_lstm_state, dec_lstm_state = None, None
