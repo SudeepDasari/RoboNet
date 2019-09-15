@@ -46,7 +46,7 @@ class LSTMBaseline(BaseGraph):
         B = inputs['start_images'].get_shape().as_list()[0]
         self._scope_name = scope_name
         outputs = {}
-        with tf.variable_scope(scope_name) as graph_scope:
+        with tf.variable_scope(scope_name):
             encoder = ImageEncoder(hparams.conv_filters, hparams.kernel_size, hparams.enc_dim, hparams.vgg_path)
             start_enc = encoder(inputs['start_images'], training=is_train)
             goal_enc = encoder(inputs['goal_images'], training=is_train)
@@ -56,29 +56,36 @@ class LSTMBaseline(BaseGraph):
             lstm_in = layers.BatchNormalization(axis=-1)(tf.nn.relu(lstm_in), training=is_train)
             lstm_in = tf.reshape(lstm_in, (-1, inputs['T'], hparams.latent_dim))
             
-            lstm = layers.LSTM(hparams.latent_dim + inputs['adim'])
-            lstm.cell.build([B, inputs['T'], hparams.latent_dim + inputs['adim']])
+            lstm_dim = hparams.latent_dim 
+            if hparams.append_last_action:
+                lstm_dim += + inputs['adim']
+            
+            lstm = layers.LSTM(lstm_dim)
+            lstm.cell.build([B, inputs['T'], lstm_dim])
             last_action = tf.zeros((B, inputs['adim']))
 
             action_predictions = []
             top_layer = layers.Dense(inputs['adim'])
             schedule_sample = self.schedule_sample(inputs['T'], B, hparams)
             for t in range(inputs['T']):
-                in_t = tf.concat([lstm_in[:, t], last_action], axis=-1)
+                if hparams.append_last_action:
+                    in_t = tf.concat([in_t, last_action], axis=-1)
+                    if t > 0 and is_train:
+                        real_action = inputs['real_actions'][:, t - 1]
+                        last_action = tf.where(schedule_sample[t - 1], real_action, action_predictions[-1][:, 0])
+                    else:
+                        last_action = action_predictions[-1][:, 0]
+                else:
+                    in_t = lstm_in[:, t]
+
                 if t == 0:
                     hidden_state = lstm.get_initial_state(in_t[:, None])
-                elif is_train:
-                    real_action = inputs['real_actions'][:, t - 1]
-                    last_action = tf.where(schedule_sample[t - 1], real_action, action_predictions[-1][:, 0])
-                else:
-                    last_action = action_predictions[-1][:, 0]
-
                 lstm_out, hidden_state = lstm.cell(in_t, hidden_state)
                 action_predictions.append(top_layer(lstm_out)[:, None])
                 
 
             outputs['pred_actions'] = tf.concat(action_predictions, axis=1)
-            if inputs['T'] > 1:
+            if hparams.append_last_action and inputs['T'] > 1:
                 outputs['ground_truth_sampling_mean'] = tf.reduce_mean(tf.to_float(schedule_sample))
 
             return outputs
@@ -93,8 +100,9 @@ class LSTMBaseline(BaseGraph):
             "latent_dim": 20,
 
             "vgg_path": '~/',
+            "append_last_action": True,
             "schedule_sampling_k": 900.0,
-            "schedule_sampling_steps": [0, 100000]
+            "schedule_sampling_steps": [0, 100000],
         }
         return dict(itertools.chain(BaseGraph.default_hparams().items(), default_params.items()))
 
