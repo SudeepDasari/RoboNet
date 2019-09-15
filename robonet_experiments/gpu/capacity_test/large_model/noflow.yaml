@@ -30,6 +30,6 @@ model_hparams:
   schedule_sampling_k: 4000
   use_flows: False
   tv_weight: 0
-  enc_filters: [256, 512, 896]
-  lstm_filters: 896
-  dec_filters: [896, 512]
+  enc_filters: [256, 512, 1024]
+  lstm_filters: 1024
+  dec_filters: [1024, 512]
