@@ -87,17 +87,11 @@ class DeterministicModel(BaseModel):
 
         # build the graph
         self._model_graph = model_graph = self._graph_class()
-
-        if self._num_gpus <= 1:
-            outputs = model_graph.build_graph(mode, inputs, self._hparams, self._graph_scope)
-        else:
-            # TODO: add multi-gpu support
-            raise NotImplementedError
+        outputs = model_graph.build_graph(mode, inputs, self._hparams, self._num_gpus, self._graph_scope)
         pred_frames = tf.transpose(outputs["gen_images"], [1,0,2,3,4])
 
         # if train build the loss function (don't support multi-gpu training)
         if mode == tf.estimator.ModeKeys.TRAIN:
-            assert self._num_gpus <= 1, "only single gpu training supported at the moment"
             global_step = tf.train.get_or_create_global_step()
             lr, optimizer = tf_utils.build_optimizer(self._hparams.lr, self._hparams.beta1, self._hparams.beta2, 
                                         decay_steps=self._hparams.decay_steps, 
