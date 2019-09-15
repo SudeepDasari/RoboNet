@@ -63,7 +63,7 @@ class VGGConvGraph(BaseGraph):
         #TODO "implement state conditioning"
         assert not hparams.use_states
 
-        enc_device = dec_device = '/device:GPU:0'
+        conv_device = lstm_device = '/device:GPU:0'
         if n_gpus > 1:
             dec_device = '/device:GPU:1'
 
@@ -86,7 +86,7 @@ class VGGConvGraph(BaseGraph):
                     casted_gen = _cast_down(outputs['gen_images'][-1], hparams)
                     input_image = tf.where(self._ground_truth[t], casted_real, casted_gen)
 
-                with tf.device(enc_device):
+                with tf.device(conv_device):
                     # encoder convs
                     encoded_imgs = input_image
                     for i, op in enumerate(self._enc_ops):
@@ -104,13 +104,14 @@ class VGGConvGraph(BaseGraph):
                     encoded_imgs = self._enc_conv(tf.concat((encoded_imgs, enc_append), -1))
                     encoded_imgs = tf.contrib.layers.instance_norm(_cast_up(encoded_imgs), activation_fn=tf.nn.relu, 
                                                                     scope='norm{}'.format(norm_ctr), reuse = t > 0)
+                with tf.device(lstm_device):
                     norm_ctr += 1
                     # encoder lstm cell
                     if t == 0:
                         enc_lstm_state = self._enc_lstm.get_initial_state(encoded_imgs[:, None])
                     enc_out, enc_lstm_state = self._enc_lstm.cell(encoded_imgs, enc_lstm_state)
 
-                with tf.device(dec_device):
+                
                     # decoder attention
                     enc_out = _cast_down(enc_out, hparams)
                     flatten_enc = tf.reshape(enc_out, (B, -1))
@@ -133,7 +134,8 @@ class VGGConvGraph(BaseGraph):
                     # decoder convs
                     if t < hparams.context_frames - 1:   # no frame predictions for extra context frames
                         continue
-                    
+                
+                with tf.device(conv_device):
                     decoder_out = _cast_down(dec_lstm_out, hparams)
                     for op in self._dec_ops:
                         decoder_out = op(decoder_out)
@@ -171,10 +173,10 @@ class VGGConvGraph(BaseGraph):
             outputs['ground_truth_sampling_mean'] = tf.reduce_mean(tf.to_float(self._ground_truth[hparams.context_frames:]))
         return outputs
 
-    def _init_layers(self, hparams, inputs, mode, enc_device, dec_device):
+    def _init_layers(self, hparams, inputs, mode, conv_device, lstm_device):
         T, B, H, W, C = inputs['images'].get_shape().as_list()
         
-        with tf.device(enc_device):
+        with tf.device(conv_device):
             self._conv_1_1 = layers.Conv2D(hparams.enc_filters[0], hparams.kernel_size, padding='same')
             self._conv_1_2 = layers.Conv2D(hparams.enc_filters[0], hparams.kernel_size, padding='same')
             self._pool_1 = layers.MaxPool2D()
@@ -197,13 +199,13 @@ class VGGConvGraph(BaseGraph):
             self._enc_append = layers.Dense(enc_H * enc_W * hparams.action_append_channels)
             self._enc_conv = layers.Conv2D(hparams.lstm_filters, 1, padding='same')
 
+        with tf.device(lstm_device):
             self._enc_lstm = layers.ConvLSTM2D(hparams.lstm_filters, hparams.kernel_size, padding = 'same')
             self._enc_lstm.cell.build([B, T, enc_H, enc_W, hparams.lstm_filters])
-        
-        with tf.device(dec_device):
             self._dec_lstm = layers.ConvLSTM2D(hparams.lstm_filters, hparams.kernel_size, padding='same')
             self._dec_lstm.cell.build([B, T, enc_H, enc_W, hparams.lstm_filters])
 
+        with tf.device(conv_device):
             self._conv_tranpose_1 = layers.Conv2DTranspose(hparams.lstm_filters, 2, strides=2)
             self._dec_conv_1_1 = layers.Conv2D(hparams.dec_filters[0], hparams.kernel_size, padding='same')
             self._dec_conv_1_2 = layers.Conv2D(hparams.dec_filters[0], hparams.kernel_size, padding='same')

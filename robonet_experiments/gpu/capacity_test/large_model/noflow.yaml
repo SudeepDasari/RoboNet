@@ -25,8 +25,11 @@ loader_hparams:
 model_hparams:
   model: deterministic
   graph_type: vgg_conv
+  lr: 0.0001
+  context_frames: 5
+  schedule_sampling_k: 4000
   use_flows: False
   tv_weight: 0
-  enc_filters: [256, 512, 1024]
-  lstm_filters: 1024
-  dec_filters: [1024, 512]
+  enc_filters: [256, 512, 896]
+  lstm_filters: 896
+  dec_filters: [896, 512]
