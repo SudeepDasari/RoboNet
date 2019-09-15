@@ -34,7 +34,7 @@ class DeterministicModel(BaseModel):
     def _model_default_hparams(self):
         return {
             "lr": 0.001,
-            "end_lr": 0.0,
+            "end_lr": 1e-8,
             "decay_steps": (200000, 800000),
             "beta1": 0.9,
             "beta2": 0.999,
