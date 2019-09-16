@@ -44,7 +44,7 @@ class DiscretizedInverseModel(BaseInverseModel):
             z_act, n_z = binned_actions[2], len(self._hparams.pivots[2]) + 1
             theta_act, n_theta = binned_actions[3], len(self._hparams.pivots[3]) + 1
             one_hot_actions = [tf.one_hot(tensor, n_dim) for tensor, n_dim in zip((xy_act, z_act, theta_act), (n_xy, n_z, n_theta))]
-            
+            inputs['real_actions'] = tf.concat(one_hot_actions, -1)
         else:
             assert model_inputs['adim'] == 4, "only supports [x,y,z,theta] action space for now!"
             inputs['T'] = model_inputs['T']

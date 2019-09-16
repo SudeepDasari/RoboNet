@@ -69,11 +69,11 @@ class LSTMBaseline(BaseGraph):
             schedule_sample = self.schedule_sample(inputs['T'], B, hparams)
             for t in range(inputs['T']):
                 if hparams.append_last_action:
-                    in_t = tf.concat([in_t, last_action], axis=-1)
+                    in_t = tf.concat([lstm_in[:, t], last_action], axis=-1)
                     if t > 0 and is_train:
                         real_action = inputs['real_actions'][:, t - 1]
                         last_action = tf.where(schedule_sample[t - 1], real_action, action_predictions[-1][:, 0])
-                    else:
+                    elif t > 0:
                         last_action = action_predictions[-1][:, 0]
                 else:
                     in_t = lstm_in[:, t]
