@@ -16,9 +16,9 @@ class VPredEvaluation(object):
         assert first_gpu == 0, "only starts building at gpu0"
         
         self._test_hparams = self._default_hparams().override_from_dict(test_hparams)
-        self._model_path = model_path
+        self._model_path = os.path.expanduser(model_path)
 
-        config_path = glob.glob(os.path.expanduser(model_path) + '/*.yaml')
+        config_path = glob.glob(self._model_path + '/*.yaml')
         assert len(config_path) == 1, "there should be one yaml file with params inside model_path but instead {} were found!".format(len(config_path))
         config_path = config_path[0]
 
@@ -166,6 +166,7 @@ class VPredEvaluation(object):
             self._sess.run(tf.global_variables_initializer())
         
         model_paths = glob.glob('{}/model-*'.format(self._model_path))
+        assert model_paths, "models not found in {}!".format(self._model_path)
         max_model = max([int(m.split('.')[0].split('-')[-1]) for m in model_paths])
         restore_path = os.path.join(self._model_path, 'model-' + str(max_model))
         print('restoring', restore_path)
@@ -189,6 +190,10 @@ class VPredEvaluation(object):
     @property
     def n_context(self):
         return self._model_hparams['context_frames']
+    
+    @property
+    def horizon(self):
+        return self.sequence_length - self.n_context
 
     @property
     def n_cam(self):
@@ -197,3 +202,11 @@ class VPredEvaluation(object):
     @property
     def img_size(self):
         return self._input_hparams['img_size']
+
+    @property
+    def adim(self):
+        return self._input_hparams['target_adim']
+    
+    @property
+    def sdim(self):
+        return self._input_hparams['target_sdim']
