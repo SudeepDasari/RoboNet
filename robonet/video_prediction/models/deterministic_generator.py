@@ -184,7 +184,7 @@ class DeterministicModel(BaseModel):
             loss = sum(loss * weight for loss, weight in gen_losses.values())
 
             print('computing gradient and train_op')
-            g_gradvars = optimizer.compute_gradients(loss, var_list=model_graph.vars)
+            g_gradvars = optimizer.compute_gradients(loss, var_list=model_graph.vars, colocate_gradients_with_ops=True)
             g_train_op = optimizer.apply_gradients(g_gradvars, global_step=global_step)
             
             if self._tpu_mode:
