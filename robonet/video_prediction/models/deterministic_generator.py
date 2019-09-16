@@ -35,7 +35,7 @@ class DeterministicModel(BaseModel):
         return {
             "lr": 0.001,
             "end_lr": 1e-8,
-            "decay_steps": (200000, 800000),
+            "decay_steps": [200000, 800000],
             "beta1": 0.9,
             "beta2": 0.999,
             'l1_weight': 1.0,

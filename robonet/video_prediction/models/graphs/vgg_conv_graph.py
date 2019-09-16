@@ -54,7 +54,10 @@ def _cast_up(tensor):
 
 
 class VGGConvGraph(BaseGraph):
-    def build_graph(self, mode, inputs, hparams, n_gpus=1, scope_name='flow_generator'):
+    def build_graph(self, mode, inputs, hparams, n_gpus=1, scope_name='generator'):
+        if 'pix_distribs' in inputs:
+            assert hparams.use_flows, "pixel distributions can only be used in flow mode!"
+        
         # calculate number of flows if needed
         if hparams.use_flows:
             self._n_flows = (hparams.skip_flows * hparams.context_frames) + hparams.img_flows
@@ -146,7 +149,7 @@ class VGGConvGraph(BaseGraph):
                             decoder_out = _cast_down(decoder_out, hparams)
                             norm_ctr += 1
 
-                    # predict flows
+                    # predict images and pixel distributions using flows
                     if hparams.use_flows:
                         kernel_convs, mask_convs = tf.split(decoder_out, 2, axis=-1)
                         kernel_convs = tf.transpose(tf.reshape(kernel_convs, (B, -1, self._n_flows)), (0, 2, 1))
@@ -166,11 +169,27 @@ class VGGConvGraph(BaseGraph):
                         masks = tf.expand_dims(tf.nn.softmax(self._mask_top(mask_convs)), axis=-1)
 
                         outputs['gen_images'] = outputs.get('gen_images', []) + [_cast_up(tf.reduce_sum(warped_images * masks, axis=-2))]
+
+                        if 'pix_distribs' in inputs:
+                            warped_distribs = []
+                            if hparams.skip_flows:
+                                warped_distribs = [apply_cdna_kernels(inputs['pix_distribs'][t_index], 
+                                                        kernels[:, :, :, t_index * hparams.skip_flows: (t_index + 1) * hparams.skip_flows])
+                                                        for t_index in range(hparams.context_frames)]
+
+                            warped_distribs.append(apply_cdna_kernels(inputs['pix_distribs'][t], img_flow_kernels))
+                            warped_distribs = tf.concat(warped_distribs, axis=-2)
+                            warped_distribs = _cast_up(tf.reduce_sum(warped_distribs * masks, axis=-2))
+                            warped_distribs = warped_distribs / (tf.reduce_sum(warped_distribs, axis=(1, 2), keepdims=True) + RELU_SHIFT)
+                            outputs['gen_pix_distribs'] = outputs.get('gen_pix_distribs', []) + [warped_distribs]
                     else:
                         outputs['gen_images'] = outputs.get('gen_images', []) + [_cast_up(self._top(decoder_out))]
 
             outputs['gen_images'] = tf.concat([pred[None] for pred in outputs['gen_images']], 0)
             outputs['ground_truth_sampling_mean'] = tf.reduce_mean(tf.to_float(self._ground_truth[hparams.context_frames:]))
+            if 'pix_distribs' in inputs:
+                outputs['gen_pix_distribs'] = tf.concat([pred[None] for pred in outputs['gen_pix_distribs']], 0)
+
         return outputs
 
     def _init_layers(self, hparams, inputs, mode, enc_device, dec_device):
