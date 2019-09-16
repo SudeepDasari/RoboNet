@@ -190,6 +190,10 @@ class VPredEvaluation(object):
     @property
     def n_context(self):
         return self._model_hparams['context_frames']
+    
+    @property
+    def horizon(self):
+        return self.sequence_length - self.n_context
 
     @property
     def n_cam(self):
@@ -198,3 +202,11 @@ class VPredEvaluation(object):
     @property
     def img_size(self):
         return self._input_hparams['img_size']
+
+    @property
+    def adim(self):
+        return self._input_hparams['target_adim']
+    
+    @property
+    def sdim(self):
+        return self._input_hparams['target_sdim']
