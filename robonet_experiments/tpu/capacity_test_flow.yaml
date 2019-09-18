@@ -16,8 +16,8 @@ model_hparams:
   tv_weight: 0
   lr: 0.0001
   context_frames: 5
-  enc_filters: [512, 1024, 1664]
-  lstm_filters: 1664
+  enc_filters: [512, 1024, 1536]
+  lstm_filters: 1536
   dec_filters: [1024, 512]
   schedule_sampling_k: 4000
   img_flows: 32
