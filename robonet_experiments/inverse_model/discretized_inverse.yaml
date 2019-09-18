@@ -14,7 +14,7 @@ batch_config:
 loader_hparams:
   dataset: "RoboNet"
   buffer_size: 10
-  load_T: search/grid([3, 4])
+  load_T: search/grid([2, 4, 11])
   load_random_cam: False
 #  color_augmentation: 0.1
   img_size: [192, 256]
@@ -24,4 +24,4 @@ model_hparams:
   model: DiscretizedInverseModel
   graph_type: lstm_baseline
   vgg_path: ${VGG_DIR}
-#  append_last_action: False
+  append_last_action: search/grid([true, false])

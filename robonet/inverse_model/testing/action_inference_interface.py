@@ -16,9 +16,9 @@ class ActionInferenceInterface(object):
         assert first_gpu == 0, "only starts building at gpu0"
         
         self._test_hparams = self._default_hparams().override_from_dict(test_hparams)
-        self._model_path = model_path
+        self._model_path = os.path.expanduser(model_path)
 
-        config_path = glob.glob(os.path.expanduser(model_path) + '/*.yaml')
+        config_path = glob.glob(model_path + '/*.yaml')
         assert len(config_path) == 1, "there should be one yaml file with params inside model_path but instead {} were found!".format(len(config_path))
         config_path = config_path[0]
 

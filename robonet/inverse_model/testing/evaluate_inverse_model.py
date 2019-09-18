@@ -191,6 +191,8 @@ def get_prediction_batches(dataset, sess, prediction_model, inverse_model, mode=
     else:
         inv_actions = inv_actions[:, :real_actions.shape[1]]
 
+    import pdb; pdb.set_trace()
+
     return real_prediction_batch, {'context_tensors': context, 'action_tensors': {'actions': inv_actions}}
     
 
