@@ -98,7 +98,11 @@ class DiscretizedInverseModel(BaseInverseModel):
         pred_z = outputs['pred_actions'][:, :, n_xy:n_z + n_xy]
         pred_theta = outputs['pred_actions'][:, :, n_z + n_xy:]
         
-        import pdb; pdb.set_trace()
         pred_xy = tf.reshape(tf.random.categorical(tf.reshape(pred_xy, (-1, n_xy)), 1, dtype=tf.int32), (-1, model_inputs['T']))
-        return outputs['pred_actions']
+        pred_x, pred_y = tf.mod(pred_xy, len(self._hparams.pivots[0]) + 1), tf.floordiv(pred_xy, len(self._hparams.pivots[0]) + 1)
+        pred_z = tf.reshape(tf.random.categorical(tf.reshape(pred_z, (-1, n_z)), 1, dtype=tf.int32), (-1, model_inputs['T']))
+        pred_theta = tf.reshape(tf.random.categorical(tf.reshape(pred_theta, (-1, n_theta)), 1, dtype=tf.int32), (-1, model_inputs['T']))
 
+        outputs['pred_actions'] = tf.concat([tf.gather(means[i], indices)[:, :, None] for i, indices in 
+                                            enumerate([pred_x, pred_y, pred_z, pred_theta])], axis=-1)
+        return outputs['pred_actions']

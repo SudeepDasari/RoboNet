@@ -88,7 +88,10 @@ class VGGConvGraph(BaseGraph):
                 else:
                     casted_real = _cast_down(inputs['images'][t], hparams)
                     casted_gen = _cast_down(outputs['gen_images'][-1], hparams)
-                    input_image = tf.where(self._ground_truth[t], casted_real, casted_gen)
+                    if mode == tf.estimator.ModeKeys.TRAIN:
+                        input_image = tf.where(self._ground_truth[t], casted_real, casted_gen)
+                    else:
+                        input_image = casted_gen
 
                 with tf.device(enc_device):
                     # encoder convs
@@ -194,7 +197,6 @@ class VGGConvGraph(BaseGraph):
 
     def _init_layers(self, hparams, inputs, mode, enc_device, dec_device):
         T, B, H, W, C = inputs['images'].get_shape().as_list()
-        
         with tf.device(enc_device):
             self._conv_1_1 = layers.Conv2D(hparams.enc_filters[0], hparams.kernel_size, padding='same')
             self._conv_1_2 = layers.Conv2D(hparams.enc_filters[0], hparams.kernel_size, padding='same')
