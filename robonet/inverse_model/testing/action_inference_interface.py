@@ -91,5 +91,5 @@ class ActionInferenceInterface(object):
         self._restored = True
     
     @property
-    def T(self):
+    def horizon(self):
         return self._input_hparams['load_T'] - 1

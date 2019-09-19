@@ -14,7 +14,7 @@ batch_config:
 loader_hparams:
   dataset: "RoboNet"
   buffer_size: 10
-  load_T: search/grid([2, 4, 11])
+  load_T: 11 #search/grid([2, 4, 11])
   load_random_cam: False
 #  color_augmentation: 0.1
   img_size: [192, 256]
