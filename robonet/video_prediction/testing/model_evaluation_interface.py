@@ -7,6 +7,7 @@ import tensorflow as tf
 from tensorflow.contrib.training import HParams
 import os
 import math
+import re
 import glob
 
 
@@ -165,10 +166,11 @@ class VPredEvaluation(object):
             self._sess = tf.Session()
             self._sess.run(tf.global_variables_initializer())
         
-        model_paths = glob.glob('{}/model-*'.format(self._model_path))
+        model_paths = glob.glob('{}/model*'.format(self._model_path))
         assert model_paths, "models not found in {}!".format(self._model_path)
-        max_model = max([int(m.split('.')[0].split('-')[-1]) for m in model_paths])
-        restore_path = os.path.join(self._model_path, 'model-' + str(max_model))
+        max_model = max([max(re.findall('\d+', m)) for m in model_paths])
+        meta_file = [m for m in model_paths if '.meta' in m and str(max_model) in m][0]
+        restore_path = meta_file.split('.')[0]
         print('restoring', restore_path)
 
         checkpoints = [restore_path]
