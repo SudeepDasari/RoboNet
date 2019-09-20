@@ -13,7 +13,6 @@ import glob
 
 class VPredEvaluation(object):
     def __init__(self, model_path, test_hparams={}, n_gpus=1, first_gpu=0, sess=None):
-        assert n_gpus == 1, "multi gpu evaluation not yet written"
         assert first_gpu == 0, "only starts building at gpu0"
         
         self._test_hparams = self._default_hparams().override_from_dict(test_hparams)
@@ -162,6 +161,9 @@ class VPredEvaluation(object):
         self._sess = sess
 
     def restore(self):
+        if self._restored:
+            return
+
         if self._sess is None:
             self._sess = tf.Session()
             self._sess.run(tf.global_variables_initializer())
