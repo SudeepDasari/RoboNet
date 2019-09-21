@@ -1,7 +1,8 @@
 # general experiment and batch configs
 data_directory: ${DATA_DIR}
-save_dir: "model_save_large_lbls_flow"
-batch_sizes: [16]
+save_dir: "model_save_large_lbls_flow_multibot_2"
+batch_sizes: [4, 4, 4, 4]
+robots: ['sawyer', 'franka', 'baxter', 'widowx'] 
 max_steps: 600000
 
 # loader_hparams used to initialize loader object
@@ -14,10 +15,10 @@ model_hparams:
   graph_type: vgg_conv
   tv_weight: 0
   lr: 0.0001
-  context_frames: 4
-  enc_filters: [512, 1024, 1664]
-  lstm_filters: 1664
+  context_frames: 5
+  enc_filters: [512, 1024, 1536]
+  lstm_filters: 1536
   dec_filters: [1024, 512]
   schedule_sampling_k: 4000
-  img_flows: 96
-  skip_flows: 32
+  img_flows: 32
+  skip_flows: 16

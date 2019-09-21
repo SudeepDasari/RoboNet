@@ -10,7 +10,7 @@ class BaseModel(object):
         self._num_gpus = num_gpus
         self._graph_class = self._get_graph(graph_type)
         self._tpu_mode = tpu_mode
-        if graph_scope:
+        if graph_scope is not None:
             self._graph_scope = graph_scope
         else:
             self._graph_scope = self._default_scope()
@@ -36,6 +36,7 @@ class BaseModel(object):
         for k in list(params.keys()):
             if k not in default_hparams:
                 params.pop(k)
+                print('key {} specified but is not in hparams!')
 
         self._hparams = HParams(**default_hparams).override_from_dict(params)
         self._hparams.use_tpu = self._use_tpu

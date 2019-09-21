@@ -3,7 +3,7 @@ import os
 from robonet.datasets import get_dataset_class
 from robonet.video_prediction.models import get_model
 import tensorflow as tf
-from yaml_util import parse_tpu_config as parse_config
+from robonet.yaml_util import parse_tpu_config as parse_config
 
 
 def dataset_fn(params, DatasetClass, batch_sizes, loader_files, dataset_hparams):

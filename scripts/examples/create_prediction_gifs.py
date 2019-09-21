@@ -2,14 +2,12 @@ from robonet.video_prediction.testing import VPredEvaluation
 from robonet.yaml_util import parse_tune_config as parse_config
 import os
 import argparse
-from robonet.inverse_model.testing.action_inference_interface import ActionInferenceInterface
 import tensorflow as tf
 from robonet.datasets import get_dataset_class, load_metadata
 from tensorflow.contrib.training import HParams
 from robonet.datasets.util.tensor_multiplexer import MultiplexedTensors
-from robonet.video_prediction.testing.model_evaluation_interface import VPredEvaluation
-import cv2
 import numpy as np
+import imageio
 
 
 class DataLoader:
@@ -43,8 +41,6 @@ class DataLoader:
         self._batch_config = config.pop('batch_config')
         dataset_hparams, model_hparams = config.pop('loader_hparams', {}), config.pop('model_hparams', {})
         hparams = self._default_hparams().override_from_dict(config)
-        hparams.graph_type = model_hparams.pop('graph_type')                      # required key which tells model which graph to load
-        assert hparams.max_steps > 0, "max steps must be positive!"
 
         if 'splits' not in dataset_hparams:
             dataset_hparams['splits'] = [hparams.train_fraction, hparams.val_fraction, 1 - hparams.val_fraction - hparams.train_fraction]
@@ -150,79 +146,49 @@ class DataLoader:
         return sess.run([self._inputs, self._targets], feed_dict=self._tensor_multiplexer.get_feed_dict(mode))
 
 
-def _resize(image_batch, image_size):
-    B = image_batch.shape[0]
-    old_height, old_width = image_batch.shape[-3:-1]
-    image_batch = image_batch.reshape((-1, old_height, old_width, 3))
-    image_batch = (image_batch * 255).astype(np.uint8)
-
-    target_height, target_width = image_size
-    out_images = np.zeros((image_batch.shape[0], target_height, target_width, 3), dtype=np.uint8)
-
-    resize_method = cv2.INTER_CUBIC
-    if target_height * target_width < old_height * old_width:
-        resize_method = cv2.INTER_AREA
-
-    for t, img in enumerate(image_batch):
-        if (old_height, old_width) == (target_height, target_width):
-            out_images[t] = img
-        else:
-            out_images[t] = cv2.resize(img, (target_width, target_height), interpolation=resize_method)
-
-    return out_images.reshape((B, -1, target_height, target_width, 3)) / 255.0
-
-
-def get_prediction_batches(dataset, sess, prediction_model, inverse_model, mode='val'):
-    batch = dataset.get_batch(sess, mode)
+def get_prediction_batches(dataset, prediction_model, mode='test'):
+    batch = dataset.get_batch(prediction_model._sess, mode)
     actions = batch[0]['actions']
     states, images = [batch[1][x] for x in ('states', 'images')]
     context = {
-            "context_frames": _resize(images[:, :prediction_model.n_context], prediction_model.img_size)[:, :, None],
+            "context_frames": images[:, :prediction_model.n_context][:, :, None],
             "context_actions": actions[:, :prediction_model.n_context - 1],
             "context_states": states[:, :prediction_model.n_context]
     }
     real_actions = actions[:, prediction_model.n_context - 1:]
-    real_prediction_batch = {'context_tensors': context, 'action_tensors': {'actions':real_actions}}
-
-    start, goal = images[:, prediction_model.n_context - 1], images[:, -1]
-    inv_actions = inverse_model(start, goal)
-    if inv_actions.shape[1] < real_actions.shape[1]:
-        inv_actions = np.concatenate((inv_actions, np.zeros((inv_actions.shape[0], real_actions.shape[1] - inv_actions.shape[1], inv_actions.shape[-1]))), axis=1)
-    else:
-        inv_actions = inv_actions[:, :real_actions.shape[1]]
-
-    return real_prediction_batch, {'context_tensors': context, 'action_tensors': {'actions': inv_actions}}
     
+    real_prediction_batch = {'context_tensors': context, 'action_tensors': {'actions':real_actions}}
+    real_frames = images[:, prediction_model.n_context:]
+    return real_prediction_batch, real_frames
+
 
 if __name__ == '__main__':
+    import pickle as pkl
     parser = argparse.ArgumentParser()
     parser.add_argument('experiment_file', type=str, help='path to YAML experiment config file')
-    parser.add_argument('inverse_checkpoint', type=str, help="path to inverse model checkpoint folder")
     parser.add_argument('prediction_checkpoint', type=str, help="path to video prediction model checkpoint folder")
     parser.add_argument('--N', type=int, help="number of batches to run", default=1)
+    parser.add_argument('--n_gpus', type=int, help="number of GPUs to use during eval", default=1)
     args = parser.parse_args()
     args.experiment_file = os.path.expanduser(args.experiment_file)
-    args.inverse_checkpoint = os.path.expanduser(args.inverse_checkpoint)
     args.prediction_checkpoint = os.path.expanduser(args.prediction_checkpoint)
 
     config = parse_config(args.experiment_file)
     config.pop('train_class', None)
     
-    inverse_model = ActionInferenceInterface(args.inverse_checkpoint, {"run_batch_size": 16})
-    prediction_model = VPredEvaluation(args.prediction_checkpoint, {"run_batch_size": 16, 'tile_context': False})
-    config['loader_hparams']['load_T'] = max(config['loader_hparams'].get('load_T', 0) + prediction_model.n_context, prediction_model.sequence_length)
+    batch_size = config['batch_size']
+    prediction_model = VPredEvaluation(args.prediction_checkpoint, {"run_batch_size": batch_size, 'tile_context': False}, n_gpus=args.n_gpus)
+    config['loader_hparams']['load_T'] = prediction_model.sequence_length
     dataset = DataLoader(config)
+    prediction_model.restore()
     
-    s = tf.Session()
-    s.run(tf.global_variables_initializer())
-
-    [model.set_session(s) for model in (prediction_model, inverse_model)]
-    [model.restore() for model in (prediction_model, inverse_model)]
-
     for n in range(args.N):
-        real_batch, inv_batch = get_prediction_batches(dataset, s, prediction_model, inverse_model)
-        real_act_frames = prediction_model(**real_batch)['predicted_frames']
-        pred_act_frames = prediction_model(**inv_batch)['predicted_frames']
-
-        import pdb; pdb.set_trace()
-        print(real_act_frames)
+        input_batch, real_frames = get_prediction_batches(dataset, prediction_model)
+        pred_frames = prediction_model(**input_batch)['predicted_frames'][:, :, 0]
+        for b in range(batch_size):
+            for vid, name in zip([real_frames, pred_frames], ['real', 'pred']):
+                images = (vid[b] * 255).astype(np.uint8)
+                writer = imageio.get_writer('b{}_{}.gif'.format(n * batch_size + b, name))
+                for t in range(images.shape[0]):
+                    writer.append_data(images[t])
+                writer.close()

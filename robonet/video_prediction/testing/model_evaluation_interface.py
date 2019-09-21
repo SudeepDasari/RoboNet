@@ -7,18 +7,18 @@ import tensorflow as tf
 from tensorflow.contrib.training import HParams
 import os
 import math
+import re
 import glob
 
 
 class VPredEvaluation(object):
     def __init__(self, model_path, test_hparams={}, n_gpus=1, first_gpu=0, sess=None):
-        assert n_gpus == 1, "multi gpu evaluation not yet written"
         assert first_gpu == 0, "only starts building at gpu0"
         
         self._test_hparams = self._default_hparams().override_from_dict(test_hparams)
-        self._model_path = model_path
+        self._model_path = os.path.expanduser(model_path)
 
-        config_path = glob.glob(os.path.expanduser(model_path) + '/*.yaml')
+        config_path = glob.glob(self._model_path + '/*.yaml')
         assert len(config_path) == 1, "there should be one yaml file with params inside model_path but instead {} were found!".format(len(config_path))
         config_path = config_path[0]
 
@@ -161,13 +161,18 @@ class VPredEvaluation(object):
         self._sess = sess
 
     def restore(self):
+        if self._restored:
+            return
+
         if self._sess is None:
             self._sess = tf.Session()
             self._sess.run(tf.global_variables_initializer())
         
-        model_paths = glob.glob('{}/model-*'.format(self._model_path))
-        max_model = max([int(m.split('.')[0].split('-')[-1]) for m in model_paths])
-        restore_path = os.path.join(self._model_path, 'model-' + str(max_model))
+        model_paths = glob.glob('{}/model*'.format(self._model_path))
+        assert model_paths, "models not found in {}!".format(self._model_path)
+        max_model = max([max(re.findall('\d+', m)) for m in model_paths])
+        meta_file = [m for m in model_paths if '.meta' in m and str(max_model) in m][0]
+        restore_path = '.'.join(meta_file.split('.')[:-1])
         print('restoring', restore_path)
 
         checkpoints = [restore_path]
@@ -189,6 +194,10 @@ class VPredEvaluation(object):
     @property
     def n_context(self):
         return self._model_hparams['context_frames']
+    
+    @property
+    def horizon(self):
+        return self.sequence_length - self.n_context
 
     @property
     def n_cam(self):
@@ -197,3 +206,11 @@ class VPredEvaluation(object):
     @property
     def img_size(self):
         return self._input_hparams['img_size']
+
+    @property
+    def adim(self):
+        return self._input_hparams['target_adim']
+    
+    @property
+    def sdim(self):
+        return self._input_hparams['target_sdim']

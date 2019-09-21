@@ -34,8 +34,8 @@ class DeterministicModel(BaseModel):
     def _model_default_hparams(self):
         return {
             "lr": 0.001,
-            "end_lr": 0.0,
-            "decay_steps": (200000, 300000),
+            "end_lr": 1e-8,
+            "decay_steps": [200000, 800000],
             "beta1": 0.9,
             "beta2": 0.999,
             'l1_weight': 1.0,
@@ -87,17 +87,11 @@ class DeterministicModel(BaseModel):
 
         # build the graph
         self._model_graph = model_graph = self._graph_class()
-
-        if self._num_gpus <= 1:
-            outputs = model_graph.build_graph(mode, inputs, self._hparams, self._graph_scope)
-        else:
-            # TODO: add multi-gpu support
-            raise NotImplementedError
+        outputs = model_graph.build_graph(mode, inputs, self._hparams, self._num_gpus, self._graph_scope)
         pred_frames = tf.transpose(outputs["gen_images"], [1,0,2,3,4])
 
         # if train build the loss function (don't support multi-gpu training)
         if mode == tf.estimator.ModeKeys.TRAIN:
-            assert self._num_gpus <= 1, "only single gpu training supported at the moment"
             global_step = tf.train.get_or_create_global_step()
             lr, optimizer = tf_utils.build_optimizer(self._hparams.lr, self._hparams.beta1, self._hparams.beta2, 
                                         decay_steps=self._hparams.decay_steps, 
@@ -190,7 +184,7 @@ class DeterministicModel(BaseModel):
             loss = sum(loss * weight for loss, weight in gen_losses.values())
 
             print('computing gradient and train_op')
-            g_gradvars = optimizer.compute_gradients(loss, var_list=model_graph.vars)
+            g_gradvars = optimizer.compute_gradients(loss, var_list=model_graph.vars, colocate_gradients_with_ops=True)
             g_train_op = optimizer.apply_gradients(g_gradvars, global_step=global_step)
             
             if self._tpu_mode:

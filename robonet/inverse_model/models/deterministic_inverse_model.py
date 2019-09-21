@@ -16,7 +16,6 @@ class DeterministicInverseModel(BaseInverseModel):
             "end_lr": 0.0,
             "beta1": 0.9,
             "beta2": 0.999,
-            'l1_weight': 1.0,
         }
 
     def _model_fn(self, model_inputs, model_targets, mode):
