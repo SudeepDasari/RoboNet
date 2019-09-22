@@ -6,7 +6,7 @@ from robonet.inverse_model.models.layers.vgg_pretrain import get_vgg_dict, vgg_p
 
 
 class ImageEncoder(tf.Module):
-    def __init__(self, conv_filters, kernel_size, out_dim, vgg_path, padding='same', n_convs=3):
+    def __init__(self, conv_filters, kernel_size, out_dim, vgg_path, n_convs=3, padding='same',):
         self._vgg_dict = get_vgg_dict(vgg_path)
         
         self._convs = [[layers.Conv2D(conv_filters, kernel_size, padding="same", dilation_rate=min(c + 1, 3)), 
@@ -47,7 +47,7 @@ class LSTMBaseline(BaseGraph):
         self._scope_name = scope_name
         outputs = {}
         with tf.variable_scope(scope_name):
-            encoder = ImageEncoder(hparams.conv_filters, hparams.kernel_size, hparams.enc_dim, hparams.vgg_path)
+            encoder = ImageEncoder(hparams.conv_filters, hparams.kernel_size, hparams.enc_dim, hparams.vgg_path, hparams.n_convs)
             start_enc = encoder(inputs['start_images'], training=is_train)
             goal_enc = encoder(inputs['goal_images'], training=is_train)
             start_goal_enc = tf.concat((start_enc, goal_enc), -1)
@@ -93,6 +93,7 @@ class LSTMBaseline(BaseGraph):
     @staticmethod
     def default_hparams():
         default_params =  {
+            "n_convs": 3,
             "conv_filters": 512,
             "enc_dim": 128,
             "kernel_size": 3,
