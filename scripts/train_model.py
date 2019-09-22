@@ -28,7 +28,7 @@ if __name__ == '__main__':
     resume = config.pop('resume', args.resume)
     if args.cluster or config.pop('cluster', False):
         redis_address = ray.services.get_node_ip_address() + ':6379'
-        max_failures, resume = 20, True
+        max_failures = 1000
     elif args.local_mode or config.pop('local_mode', False):
         resume=False
         local_mode = True
