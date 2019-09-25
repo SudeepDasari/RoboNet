@@ -35,13 +35,13 @@ idle_timeout_minutes: 5
 # Cloud-provider specific configuration.
 provider:
     type: gcp
-    region: us-west1
-    availability_zone: us-west1-b
+    region: us-central1
+    availability_zone: us-central1-a
     project_id: visualmpc-210823
 
 # How Ray will authenticate with newly launched nodes.
 auth:
-    ssh_user: user
+    ssh_user: sudeep
 # By default Ray creates a new private keypair, but you can also use your own.
 # If you do so, make sure to also set "KeyName" in the head and worker node
 # configurations below.
@@ -81,7 +81,7 @@ worker_nodes:
           sourceImage: projects/visualmpc-210823/global/images/robonet-image-newray
     # workers have p100
     guestAccelerators:
-      - acceleratorType: projects/visualmpc-210823/zones/us-west1-b/acceleratorTypes/nvidia-tesla-p100
+      - acceleratorType: projects/visualmpc-210823/zones/us-central1-a/acceleratorTypes/nvidia-tesla-v100
         acceleratorCount: 2
     # Run workers on preemtible instance by default.
     # Note that GCP preemptible instances automatically shut down after 24h.
