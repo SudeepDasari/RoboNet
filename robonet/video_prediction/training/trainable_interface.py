@@ -12,6 +12,9 @@ import time
 import glob
 from robonet.datasets.util.tensor_multiplexer import MultiplexedTensors
 import yaml
+import shutil
+from robonet.video_prediction.utils.encode_img import construct_image_tile
+from robonet.video_prediction.utils.ffmpeg_gif import encode_gif
 
 
 class VPredTrainable(Trainable):
@@ -41,6 +44,7 @@ class VPredTrainable(Trainable):
             meta_file = glob.glob(self._hparams.restore_dir + '/*.meta')
             self._restore(meta_file[0])
             self._restore_logs = False
+        self._file_writer = None
 
     def _default_hparams(self):
         default_dict = {
@@ -243,9 +247,7 @@ class VPredTrainable(Trainable):
 
         fetches['done'] = itr >= self._hparams.max_steps
         
-        if self._hparams.restore_dir and not self._restore_logs:
-            fetches['restore_logs'] = self._hparams.restore_dir
-            self._restore_logs = True
+        self._tf_log(fetches)
 
         return fetches
 
@@ -277,3 +279,42 @@ class VPredTrainable(Trainable):
     @property
     def iteration(self):
         return self.sess.run(self._global_step)
+
+    def _tf_log(self, result):
+        if self._hparams.restore_dir and not self._restore_logs:
+            # close the old file_writer
+            self._file_writer.close()
+            
+            # copy log events to new directory
+            event_dir = self._hparams.restore_dir.split('/checkpoint')[0]
+            event_file = glob.glob('{}/events.out.*'.format(event_dir))[0]
+            new_path = '{}/{}'.format(self.logdir,event_file.split('/')[-1])
+            assert os.path.isfile(event_file), "even logs don't exist!"
+            shutil.copyfile(event_file, new_path)
+
+            # initialize a new file writer
+            self._restore_logs = True
+
+        if self._file_writer is None:
+            self._file_writer = tf.summary.FileWriter(self.logdir)
+        
+        global_step = result['global_step']
+
+        for k, v in result.items():
+            if 'metric/' not in k:
+                continue
+            
+            tag = '/'.join(k.split('/')[1:])
+            summary = tf.Summary()
+            if isinstance(v, np.ndarray):
+                assert v.dtype == np.uint8 and len(v.shape) >= 4, 'assume np arrays are  batched image data'
+                image = tf.Summary.Image()
+                image.height = v.shape[-3]
+                image.width = v.shape[-2]
+                image.colorspace = v.shape[-1]  # 1: grayscale, 2: grayscale + alpha, 3: RGB, 4: RGBA
+                image.encoded_image_string = encode_gif(construct_image_tile(v), 4)
+                summary.value.add(tag=tag, image=image)
+            else:
+                summary.value.add(tag=tag, simple_value=v)
+            self._file_writer.add_summary(summary, global_step)
+        self._file_writer.flush()
