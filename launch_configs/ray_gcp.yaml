@@ -1,5 +1,5 @@
 # An unique identifier for the head node and workers of this cluster.
-cluster_name: gcp_cluster
+cluster_name: gcpcluster
 
 # The minimum number of workers nodes to launch in addition to the head
 # node. This number should be >= 0.
@@ -60,7 +60,7 @@ head_node:
         initializeParams:
           diskSizeGb: 1000
           # See https://cloud.google.com/compute/docs/images for more images
-          sourceImage: projects/<PROJECTID>/global/images/robonet-image-newray
+          sourceImage: projects/visualmpc-210823/global/images/robonet-image-newray
 
     # Additional options can be found in in the compute docs at
     # https://cloud.google.com/compute/docs/reference/rest/v1/instances/insert
@@ -78,10 +78,10 @@ worker_nodes:
         initializeParams:
           diskSizeGb: 1000
           # See https://cloud.google.com/compute/docs/images for more images
-          sourceImage: projects/<PROJECTID>/global/images/robonet-image-newray
+          sourceImage: projects/visualmpc-210823/global/images/robonet-image-newray
     # workers have p100
     guestAccelerators:
-      - acceleratorType: projects/<PROJECTID>/zones/us-west1-b/acceleratorTypes/nvidia-tesla-p100
+      - acceleratorType: projects/visualmpc-210823/zones/us-west1-b/acceleratorTypes/nvidia-tesla-p100
         acceleratorCount: 2
     # Run workers on preemtible instance by default.
     # Note that GCP preemptible instances automatically shut down after 24h.
