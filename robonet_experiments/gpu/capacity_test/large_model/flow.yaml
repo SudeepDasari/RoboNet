@@ -6,6 +6,7 @@ batch_size: 12
 train_class: VPredTrainable 
 max_steps: 500000
 train_fraction: 0.9
+save_freq: 1000
 
 # list of dictionaries containing data sources along with filter parameters
 batch_config:
