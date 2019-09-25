@@ -104,6 +104,7 @@ setup_commands:
       && pip install --upgrade google-api-python-client
       && rm -rf ~/ray_results
       && cd ~/Documents/RoboNet
+      && git stash
       && git pull origin inverse_model
 
 

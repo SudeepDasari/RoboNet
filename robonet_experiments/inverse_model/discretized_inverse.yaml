@@ -1,6 +1,6 @@
 batch_size: 16
 train_class: InverseTrainable 
-max_steps: 50000
+max_steps: 200000
 
 
 # list of dictionaries containing data sources along with filter parameters
@@ -24,4 +24,6 @@ model_hparams:
   model: DiscretizedInverseModel
   graph_type: lstm_baseline
   vgg_path: ${VGG_DIR}
-  append_last_action: search/grid([true, false])
+  enc_dim: 256
+  latent_dim: 64
+  append_last_action: true

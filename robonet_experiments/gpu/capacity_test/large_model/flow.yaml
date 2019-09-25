@@ -2,7 +2,7 @@
 # each model is trained on a different fraction of data
 
 # general experiment configurations
-batch_size: 16
+batch_size: 12
 train_class: VPredTrainable 
 max_steps: 500000
 train_fraction: 0.9
@@ -33,3 +33,6 @@ model_hparams:
   enc_filters: [256, 512, 1024]
   lstm_filters: 1024
   dec_filters: [1024, 512]
+  img_flows: 32        
+  skip_flows: 16
+
