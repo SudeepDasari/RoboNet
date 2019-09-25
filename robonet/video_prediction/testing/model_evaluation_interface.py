@@ -1,4 +1,3 @@
-import ray
 from robonet.video_prediction.models import get_model
 import numpy as np
 import yaml
