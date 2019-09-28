@@ -59,7 +59,7 @@ class TFRecordVideoDataset(BaseVideoDataset):
                 if self._hparams.color_augmentation:
                     outputs['images'] = color_augment(outputs['images'], self._hparams.color_augmentation)
                 outputs['actions'] = tf.reshape(outputs['actions'], [batch_size, self._hparams.load_T - 1, dataset_metadata['adim']])
-                outputs['states'] = tf.reshape(outputs['states'], [batch_size, self._hparams.load_T, dataset_metadata['adim']])
+                outputs['states'] = tf.reshape(outputs['states'], [batch_size, self._hparams.load_T, dataset_metadata['sdim']])
 
                 self._mode_datasets[m].append(outputs)
 
@@ -103,7 +103,7 @@ class TFRecordVideoDataset(BaseVideoDataset):
 
         decoded_feat = {}
         height, width = metadata['img_dim']
-        
+
         vid_decode = tf.reshape(tf.image.decode_jpeg(feature['images'], channels=3), (metadata['T'] * metadata['ncam'] * height, width, 3))
         decoded_feat['images'] = tf.reshape(vid_decode, [metadata['T'], metadata['ncam'], height, width, 3])[rand_start:rand_start+self._hparams.load_T, rand_cam]
         decoded_feat['actions'] = tf.reshape(feature['actions'], [metadata['T'] - 1, metadata['adim']])[rand_start:rand_start+self._hparams.load_T - 1]
@@ -153,7 +153,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=10, help='batch size for loaded data')
     args = parser.parse_args()
 
-    loader = TPUVideoDataset([args.batch_size], [args.path], {'train_frac': 0.5, 'shuffle_buffer': 10})
+    loader = TFRecordVideoDataset([args.batch_size], [args.path], {'train_frac': 0.5, 'shuffle_buffer': 10})
     print(loader['images'], loader['actions'], loader['states'])
     s = tf.Session()
     for j in range(10):
