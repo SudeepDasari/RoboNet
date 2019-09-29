@@ -15,10 +15,12 @@ import yaml
 import shutil
 from robonet.video_prediction.utils.encode_img import construct_image_tile
 from robonet.video_prediction.utils.ffmpeg_gif import encode_gif
+import copy
 
 
 class VPredTrainable(Trainable):
     def _setup(self, config):
+        self._base_config = copy.deepcopy(config)
         # run hparams are passed in through config dict
         self.dataset_hparams, self.model_hparams, self._hparams = self._extract_hparams(config)
         inputs, targets = self._make_dataloaders(config)
@@ -260,6 +262,9 @@ class VPredTrainable(Trainable):
 
         with open(os.path.join(checkpoint_dir, 'params.yaml'), 'w') as f:
             yaml.dump({'model': model_params, 'dataset': dataset_params}, f)
+        with open(os.path.join(checkpoint_dir, 'config.yaml'), 'w') as f:
+            yaml.dump(self._base_config, f)
+        
         return self.saver.save(self.sess, os.path.join(checkpoint_dir, 'model'), global_step=self.iteration) + '.meta'
 
     def _restore(self, checkpoints):
