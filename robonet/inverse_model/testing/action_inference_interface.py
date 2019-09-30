@@ -18,9 +18,8 @@ class ActionInferenceInterface(object):
         self._test_hparams = self._default_hparams().override_from_dict(test_hparams)
         self._model_path = os.path.expanduser(model_path)
 
-        config_path = glob.glob(model_path + '/*.yaml')
-        assert len(config_path) == 1, "there should be one yaml file with params inside model_path but instead {} were found!".format(len(config_path))
-        config_path = config_path[0]
+        config_path = self._model_path + '/params.yaml'
+        assert os.path.exists(config_path), 'Config path does not exist!'
 
         with open(config_path) as config:
             params = yaml.load(config, Loader=yaml.SafeLoader)
