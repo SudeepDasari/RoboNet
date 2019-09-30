@@ -65,16 +65,17 @@ class ActionInferenceInterface(object):
 
         return pl_dict, {}
     
-    def predict(self, start_image, goal_image, context=None):
+    def predict(self, start_image, goal_image, context_actions=None, context_frames=None):
         assert self._restored
         start_goal_image = np.concatenate((start_image[:, None], goal_image[:, None]), axis=1)
         fd = {self._images_pl: start_goal_image}
         if self._model_hparams.get('context_actions', 0):
-            fd[self._context_pl] = context
+            fd[self._images_pl] = np.concatenate((context_frames, start_goal_image), axis=1)
+            fd[self._context_pl] = context_actions
         return self._sess.run(self._pred_act, feed_dict=fd)
     
-    def __call__(self, start_image, goal_image, context_actions=None):
-        return self.predict(start_image, goal_image, context_actions)
+    def __call__(self, start_image, goal_image, context_actions=None, context_frames=None):
+        return self.predict(start_image, goal_image, context_actions, context_frames)
 
     def set_session(self, sess):
         self._sess = sess
