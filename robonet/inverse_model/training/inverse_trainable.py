@@ -65,9 +65,7 @@ class InverseTrainable(VPredTrainable):
                         fetches['metric/{}/{}'.format(key, name)] = value
     
             fetches['done'] = itr >= self._hparams.max_steps
-            
-            if self._hparams.restore_dir and not self._restore_logs:
-                fetches['restore_logs'] = self._hparams.restore_dir
-                self._restore_logs = True
     
+            self._tf_log(fetches)
+
             return fetches

@@ -9,9 +9,35 @@ from robonet.video_prediction import losses
 from robonet.video_prediction.utils import tf_utils
 
 
+def _binarize(actions, pivots):
+    n_xy = (len(pivots[0]) + 1) * (len(pivots[1]) + 1)
+    n_z =  len(pivots[2]) + 1
+    n_theta = len(pivots[3]) + 1
+
+    B = actions.get_shape().as_list()[0]
+    input_adim = actions.get_shape().as_list()[2]
+    T = actions.get_shape().as_list()[1]
+
+    assert input_adim == 4, "only supports [x,y,z,theta] action space for now!"
+    assert len(pivots) == input_adim, "bad discretization pivots array!"
+    binned_actions = []
+    for a in range(input_adim):
+        binned_action = tf.zeros((B, T), dtype=tf.int32)
+        for p in range(len(pivots[a])):
+            pivot = pivots[a][p]
+            binned_action = tf.where_v2(actions[:, :, a] > pivot, binned_action + 1, binned_action)
+        binned_actions.append(binned_action)
+    
+    xy_act = binned_actions[0] + (len(pivots[0]) + 1) * binned_actions[1]
+    z_act, theta_act = binned_actions[2], binned_actions[3]
+    one_hot_actions = [tf.one_hot(tensor, n_dim) for tensor, n_dim in zip((xy_act, z_act, theta_act), (n_xy, n_z, n_theta))]
+    return one_hot_actions
+
+
 class DiscretizedInverseModel(BaseInverseModel):
     def _model_default_hparams(self):
         return {
+            "context_actions": 0,
             "lr": 0.001,
             "end_lr": 0.0,
             "beta1": 0.9,
@@ -27,8 +53,10 @@ class DiscretizedInverseModel(BaseInverseModel):
         }
 
     def _model_fn(self, model_inputs, model_targets, mode):
-        inputs, targets = {}, None
-        inputs['start_images'] = model_inputs['images'][:, 0]
+        inputs = {}
+        if self._hparams.context_actions:
+            inputs['context_frames'] = model_inputs['images'][:, :self._hparams.context_actions]
+        inputs['start_images'] = model_inputs['images'][:, self._hparams.context_actions]
         inputs['goal_images'] = model_inputs['images'][:, -1]
 
         n_xy = (len(self._hparams.pivots[0]) + 1) * (len(self._hparams.pivots[1]) + 1)
@@ -36,32 +64,23 @@ class DiscretizedInverseModel(BaseInverseModel):
         n_theta = len(self._hparams.pivots[3]) + 1
 
         if mode == tf.estimator.ModeKeys.TRAIN:
-            B = model_targets['actions'].get_shape().as_list()[0]
-            inputs['T'] = model_targets['actions'].get_shape().as_list()[1]
-            input_adim = model_targets['actions'].get_shape().as_list()[2]
-
-            assert input_adim == 4, "only supports [x,y,z,theta] action space for now!"
-            assert len(self._hparams.pivots) == input_adim, "bad discretization pivots array!"
-            binned_actions = []
-            for a in range(input_adim):
-                binned_action = tf.zeros((B, inputs['T']), dtype=tf.int32)
-                for p in range(len(self._hparams.pivots[a])):
-                    pivot = self._hparams.pivots[a][p]
-                    binned_action = tf.where_v2(model_targets['actions'][:, :, a] > pivot, binned_action + 1, binned_action)
-                binned_actions.append(binned_action)
-            
-            xy_act = binned_actions[0] + (len(self._hparams.pivots[0]) + 1) * binned_actions[1]
-            z_act, theta_act = binned_actions[2], binned_actions[3]
-            one_hot_actions = [tf.one_hot(tensor, n_dim) for tensor, n_dim in zip((xy_act, z_act, theta_act), (n_xy, n_z, n_theta))]
-            inputs['real_actions'] = tf.concat(one_hot_actions, -1)
+            one_hot_actions = _binarize(model_targets['actions'], self._hparams.pivots)
+            if self._hparams.context_actions:
+                inputs['context_actions'] = tf.concat([x[:, :self._hparams.context_actions] for x in one_hot_actions], -1)
+            real_pred_actions = [x[:, self._hparams.context_actions:] for x in one_hot_actions]
+            inputs['real_actions'] = tf.concat(real_pred_actions, -1)
+            inputs['T'] = model_targets['actions'].get_shape().as_list()[1] - self._hparams.context_actions
         else:
             assert model_inputs['adim'] == 4, "only supports [x,y,z,theta] action space for now!"
-            inputs['T'] = model_inputs['T']
+            inputs['T'] = model_inputs['T'] - self._hparams.context_actions
+            if self._hparams.context_actions:
+                one_hot_actions = _binarize(model_inputs['context_actions'], self._hparams.pivots)
+                inputs['context_actions'] = tf.concat([x[:, :self._hparams.context_actions] for x in one_hot_actions], -1)
+
         inputs['adim'] = (len(self._hparams.pivots[0]) + 1) * (len(self._hparams.pivots[1]) + 1) + sum([len(arr) + 1 for arr in self._hparams.pivots[2:]])
 
         # build the graph
         self._model_graph = model_graph = self._graph_class()
-
         if self._num_gpus <= 1:
             outputs = model_graph.build_graph(mode, inputs, self._hparams, self._graph_scope)
         else:
@@ -77,7 +96,7 @@ class DiscretizedInverseModel(BaseInverseModel):
             pred_theta = outputs['pred_actions'][:, :, n_z + n_xy:]
             pred_one_hots = [pred_xy, pred_z, pred_theta]
 
-            losses = [tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(real, pred)) for real, pred in zip(one_hot_actions, pred_one_hots)]
+            losses = [tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(real, pred)) for real, pred in zip(real_pred_actions, pred_one_hots)]
             loss = sum(losses)
 
             print('computing gradient and train_op')

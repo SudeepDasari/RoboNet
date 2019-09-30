@@ -47,23 +47,34 @@ class ActionInferenceInterface(object):
     
     def _default_hparams(self):
         default_dict = {
-            "run_batch_size": 16,
+            "run_batch_size": 1,
             "vgg_path": "~/"                # vgg19.npy should be in vgg_path folder (aka vgg_path = /path/to/folder/containing/weights/)
         }
         return HParams(**default_dict)
     
     def _build_input_targets(self):
+        n_context = self._model_hparams.get('context_actions', 0)
         height, width = self._input_hparams['img_size']
-        self._images_pl = tf.placeholder(tf.float32, [self._test_hparams.run_batch_size, 2, height, width, 3])
-        return {'adim': self._input_hparams['target_adim'], 'T': self._input_hparams['load_T'] - 1, 'images': self._images_pl}, {}
+        self._images_pl = tf.placeholder(tf.float32, [self._test_hparams.run_batch_size, 2 + n_context, height, width, 3])
+        pl_dict = {'adim': self._input_hparams['target_adim'], 'T': self._input_hparams['load_T'] - 1, 'images': self._images_pl}
+        
+        if n_context:
+            self._context_pl = tf.placeholder(tf.float32, [self._test_hparams.run_batch_size, self._model_hparams['context_actions'], 
+                                                            self._input_hparams['target_adim']])
+            pl_dict['context_actions'] = self._context_pl
+
+        return pl_dict, {}
     
-    def predict(self, start_image, goal_image):
+    def predict(self, start_image, goal_image, context=None):
         assert self._restored
         start_goal_image = np.concatenate((start_image[:, None], goal_image[:, None]), axis=1)
-        return self._sess.run(self._pred_act, feed_dict={self._images_pl: start_goal_image})
+        fd = {self._images_pl: start_goal_image}
+        if self._model_hparams.get('context_actions', 0):
+            fd[self._context_pl] = context
+        return self._sess.run(self._pred_act, feed_dict=fd)
     
-    def __call__(self, start_image, goal_image):
-        return self.predict(start_image, goal_image)
+    def __call__(self, start_image, goal_image, context_actions=None):
+        return self.predict(start_image, goal_image, context_actions)
 
     def set_session(self, sess):
         self._sess = sess
@@ -93,3 +104,7 @@ class ActionInferenceInterface(object):
     @property
     def horizon(self):
         return self._input_hparams['load_T'] - 1
+
+    @property
+    def context_actions(self):
+        return self._model_hparams.get('context_actions', 0)
