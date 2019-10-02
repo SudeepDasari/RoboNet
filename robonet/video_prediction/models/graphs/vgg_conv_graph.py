@@ -83,15 +83,25 @@ class VGGConvGraph(BaseGraph):
                 norm_ctr = 0
                 print('building graph for t={}'.format(t), end="\r")
                 action_state_vector = _cast_down(inputs['actions'][t], hparams)
+
                 if t < hparams.context_frames:
                     input_image = _cast_down(inputs['images'][t], hparams)
+                    input_distrib = _cast_down(inputs['pix_distribs'][-1], hparams)
                 else:
                     casted_real = _cast_down(inputs['images'][t], hparams)
                     casted_gen = _cast_down(outputs['gen_images'][-1], hparams)
+
+                    if 'pix_distribs' in inputs:
+                        casted_real_distrib = _cast_down(inputs['pix_distribs'][t], hparams)
+                        casted_gen_distrib = _cast_down(outputs['gen_pix_distribs'][-1], hparams)
+
                     if mode == tf.estimator.ModeKeys.TRAIN:
                         input_image = tf.where(self._ground_truth[t], casted_real, casted_gen)
+                        if 'pix_distribs' in inputs:
+                            input_distrib = tf.where(self._ground_truth[t], casted_real_distrib, casted_gen_distrib)
                     else:
                         input_image = casted_gen
+                        input_distrib = casted_gen_distrib
 
                 with tf.device(enc_device):
                     # encoder convs
@@ -179,8 +189,7 @@ class VGGConvGraph(BaseGraph):
                                 warped_distribs = [apply_cdna_kernels(inputs['pix_distribs'][t_index], 
                                                         kernels[:, :, :, t_index * hparams.skip_flows: (t_index + 1) * hparams.skip_flows])
                                                         for t_index in range(hparams.context_frames)]
-
-                            warped_distribs.append(apply_cdna_kernels(inputs['pix_distribs'][t], img_flow_kernels))
+                            warped_distribs.append(apply_cdna_kernels(input_distrib, img_flow_kernels))
                             warped_distribs = tf.concat(warped_distribs, axis=-2)
                             warped_distribs = _cast_up(tf.reduce_sum(warped_distribs * masks, axis=-2))
                             warped_distribs = warped_distribs / (tf.reduce_sum(warped_distribs, axis=(1, 2), keepdims=True) + RELU_SHIFT)
