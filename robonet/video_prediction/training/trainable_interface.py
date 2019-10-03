@@ -290,13 +290,16 @@ class VPredTrainable(Trainable):
         if self._hparams.restore_dir and not self._restore_logs:
             # copy log events to new directory
             event_dir = self._hparams.restore_dir.split('/checkpoint')[0]
-            event_file = glob.glob('{}/events.out.*'.format(event_dir))[0]
-            new_path = '{}/{}'.format(self.logdir,event_file.split('/')[-1])
-            if os.path.isfile(event_file):
-                if self._file_writer:
-                    self._file_writer.close()
-                    self._file_writer = None
-                shutil.copyfile(event_file, new_path)
+            event_file = glob.glob('{}/events.out.*'.format(event_dir))
+            if event_file:
+                event_file = event_file[0] 
+                new_path = '{}/{}'.format(self.logdir,event_file.split('/')[-1])
+
+                if os.path.isfile(event_file):
+                    if self._file_writer:
+                        self._file_writer.close()
+                        self._file_writer = None
+                    shutil.copyfile(event_file, new_path)
 
             # initialize a new file writer
             self._restore_logs = True

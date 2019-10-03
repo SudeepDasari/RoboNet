@@ -86,7 +86,8 @@ class VGGConvGraph(BaseGraph):
 
                 if t < hparams.context_frames:
                     input_image = _cast_down(inputs['images'][t], hparams)
-                    input_distrib = _cast_down(inputs['pix_distribs'][-1], hparams)
+                    if 'pix_distribs' in inputs:
+                        input_distrib = _cast_down(inputs['pix_distribs'][-1], hparams)
                 else:
                     casted_real = _cast_down(inputs['images'][t], hparams)
                     casted_gen = _cast_down(outputs['gen_images'][-1], hparams)
@@ -101,7 +102,8 @@ class VGGConvGraph(BaseGraph):
                             input_distrib = tf.where(self._ground_truth[t], casted_real_distrib, casted_gen_distrib)
                     else:
                         input_image = casted_gen
-                        input_distrib = casted_gen_distrib
+                        if 'pix_distribs' in inputs:
+                            input_distrib = casted_gen_distrib
 
                 with tf.device(enc_device):
                     # encoder convs
