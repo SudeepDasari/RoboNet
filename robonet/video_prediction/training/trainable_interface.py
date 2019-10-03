@@ -46,7 +46,7 @@ class VPredTrainable(Trainable):
             meta_file = glob.glob(self._hparams.restore_dir + '/*.meta')
             self._restore(meta_file[0])
             self._restore_logs = False
-        self._file_writer = None
+        self._file_writer, self._log_i = None, 0
 
     def _default_hparams(self):
         default_dict = {
@@ -60,6 +60,7 @@ class VPredTrainable(Trainable):
             'val_fraction': 0.05,
             'max_to_keep': 3,
             'max_steps': 300000,
+            'tf_log_flush_freq': 500
         }
         return HParams(**default_dict)
 
@@ -287,15 +288,15 @@ class VPredTrainable(Trainable):
 
     def _tf_log(self, result):
         if self._hparams.restore_dir and not self._restore_logs:
-            # close the old file_writer
-            self._file_writer.close()
-            
             # copy log events to new directory
             event_dir = self._hparams.restore_dir.split('/checkpoint')[0]
             event_file = glob.glob('{}/events.out.*'.format(event_dir))[0]
             new_path = '{}/{}'.format(self.logdir,event_file.split('/')[-1])
-            assert os.path.isfile(event_file), "even logs don't exist!"
-            shutil.copyfile(event_file, new_path)
+            if os.path.isfile(event_file):
+                if self._file_writer:
+                    self._file_writer.close()
+                    self._file_writer = None
+                shutil.copyfile(event_file, new_path)
 
             # initialize a new file writer
             self._restore_logs = True
@@ -322,4 +323,6 @@ class VPredTrainable(Trainable):
             else:
                 summary.value.add(tag=tag, simple_value=v)
             self._file_writer.add_summary(summary, global_step)
-        self._file_writer.flush()
+        if self._log_i == 0:
+            self._file_writer.flush()
+        self._log_i = (self._log_i + 1) % self._hparams.tf_log_flush_freq
