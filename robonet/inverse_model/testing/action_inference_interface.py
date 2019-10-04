@@ -66,7 +66,7 @@ class ActionInferenceInterface(object):
     
     def predict(self, start_image, goal_image, context_actions=None, context_frames=None):
         assert self._restored
-        start_goal_image = np.concatenate((start_image[:, None], goal_image[:, None]), axis=1)
+        start_goal_image = np.concatenate((start_image[None, None], goal_image[None, None]), axis=1)
         fd = {self._images_pl: start_goal_image}
         if self._model_hparams.get('context_actions', 0):
             fd[self._images_pl] = np.concatenate((context_frames, start_goal_image), axis=1)
