@@ -19,6 +19,7 @@ class InverseTrainable(VPredTrainable):
             'val_fraction': 0.05,
             'max_to_keep': 3,
             'max_steps': 300000,
+            'tf_log_flush_freq': 500
         }
         return HParams(**default_dict)
     
