@@ -170,7 +170,7 @@ class VPredEvaluation(object):
         assert model_paths, "models not found in {}!".format(self._model_path)
         max_model = max([max(re.findall('\d+', m)) for m in model_paths])
         meta_file = [m for m in model_paths if '.meta' in m and str(max_model) in m][0]
-        restore_path = '.'.join(meta_file.split('.')[:-1])
+        restore_path = meta_file[:meta_file.find('.meta')]
         print('restoring', restore_path)
 
         checkpoints = [restore_path]
