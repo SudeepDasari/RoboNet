@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <meta name="description" content="">
+  <meta name="author" content="">
+
+  <title>RoboNet</title>
+
+  <!-- Font Awesome Icons -->
+  <script src="https://use.fontawesome.com/bf4d595206.js"></script>
+  <!-- <link href="vendor/fontawesome-free/css/all.min.css" rel="stylesheet" type="text/css"> -->
+
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css?family=Merriweather+Sans:400,700" rel="stylesheet">
+  <link href='https://fonts.googleapis.com/css?family=Merriweather:400,300,300italic,400italic,700,700italic' rel='stylesheet' type='text/css'>
+
+  <!-- Plugin CSS -->
+  <link href="vendor/magnific-popup/magnific-popup.css" rel="stylesheet">
+
+  <!-- Theme CSS - Includes Bootstrap -->
+  <link href="css/creative.min.css" rel="stylesheet">
+  <link href="css/main.css" rel="stylesheet">
+
+</head>
+
+<body id="page-top">
+
+  <!-- Navigation -->
+  <nav class="navbar navbar-expand-lg navbar-light fixed-top py-3" id="mainNav">
+    <div class="container">
+      <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarResponsive">
+        <ul class="navbar-nav ml-auto my-2 my-lg-0">
+          <li class="nav-item">
+            <a class="nav-link js-scroll-trigger" href="#abstract">Abstract</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link js-scroll-trigger" href="#code">Code and Sundry</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link js-scroll-trigger" href="#portfolio">Featured Robots</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link js-scroll-trigger" href="#numbers">By the Numbers</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link js-scroll-trigger" href="#contribute">Contribute</a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Masthead -->
+  <header class="masthead">
+    <div class="container h-80">
+      <div class="row h-80 align-items-center justify-content-center text-center">
+        <div class="col-lg-10 mb-4 align-self-end">
+          <h1 class="text text-white font-weight-bold">RoboNet</h1>
+          <hr class="divider my-4">
+          <iframe width="896" height="504" src="https://www.youtube.com/embed/4pLDZuYEPI0" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+        </div>
+
+      </div>
+      
+      <div class="row h-80 align-items-center justify-content-center text-center">
+        <div class="col-lg-8 align-self-end">
+          <a class="btn btn-primary btn-xl js-scroll-trigger" href="#abstract">Find Out More</a>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Abstract Section -->
+  <section class="page-section bg-primary" id="abstract">
+      <div class="container">
+        <div class="row justify-content-center">
+          <div class="col-lg-8 text-center">
+            <h2 class="text-white mt-0">Abstract</h2>
+            <hr class="divider light my-4">
+          </div>
+          <div>
+              <p class="text-white-75 font-weight-light mb-5"> Robotic learning has emerged as a promising tool for taming the complexity and diversity of open-world robotics problems. Methods based on high-capacity models, such as deep networks, hold the promise of providing effective generalization to a wide range of open-world environments. However, these same methods typically require large amounts of diverse training data to generalize effectively. In contrast, most robotic learning experiments are small-scale, single-domain, and single-robot. This leads to a frequent tension in robotic learning: how can we learn generalizable robotic controllers without having to collect impractically large amounts of data for each separate experiment? </p>
+                
+                <p class="text-white-75 font-weight-light mb-5"> To address this question we propose RoboNet, an open database for sharing robotic experience, which provides an initial pool of 13 million video frames, from 6 different robot manipulators, that can be used to learn generalizable models.
+                In our experiments, we study how video prediction models trained on the full dataset and its subsets can enable vision-based control of robotic manipulators that generalizes not just to new objects, new tasks, and new scenes, but also to new viewpoints, grippers, and entirely new robots.
+                These models predict future observations conditioned on the current observation and candidate actions, enabling learned model-based control for robotic manipulation via the visual foresight algorithm. 
+                We finally study how performance on any single robot or domain can be further improved via finetuning, with a small amount of in-domain data.</p>
+                
+          </div>
+        </div>
+      </div>
+    </section>
+
+  <section class="page-section" id="code">
+    <div class="container">
+      <div class="row justify-content-center">
+        <div class="col-lg-8 text-center">
+          <h2 class="text-black mt-0">Code and Dataset</h2>
+          <hr class="divider light my-4">
+          <p class="text-black-50 mb-4"> Interested in RoboNet? Check out the paper to learn more about the project and see our results. We also provide an open source code-base and our current dataset. (will publish more formally on Github after peer-review) </p>
+          <a class="btn btn-dark btn-xl js-scroll-trigger" href="coming_soon.html"> Paper</a>
+          <a class="btn btn-dark btn-xl js-scroll-trigger" href="https://drive.google.com/open?id=1G37x_OtRwS1omC4o57PZaCDN9SOvSn7j">    Code   </a>
+          <a class="btn btn-dark btn-xl js-scroll-trigger" href="https://drive.google.com/a/berkeley.edu/uc?id=1vGg1I2EHzu6x9tXZ3hDs6fxlwc1vRAuv&export=download"> Dataset </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Portfolio Section -->
+  <section id="portfolio">
+      <h2 class="text-center mt-0"> Featured Robots </h2>
+      <hr class="divider my-4">
+    <div class="container-fluid p-0">
+      <div class="row no-gutters">
+        <div class="col-lg-4 col-sm-6">
+          <a class="portfolio-box width-fit" href="img/robot_imgs/gifs/frs0_large.gif">
+            <img class="img-fluid" src="img/robot_imgs/thumbnails/fr0.jpg" alt="" width="500">
+            <div class="portfolio-box-caption">
+              <div class="project-category text-white-50">
+                Robot: Sawyer
+              </div>
+              <div class="project-name">
+                Click to play!
+              </div>
+            </div>
+          </a>
+        </div>
+        <div class="col-lg-4 col-sm-6">
+          <a class="portfolio-box width-fit" href="img/robot_imgs/gifs/frs1_large.gif">
+            <img class="img-fluid" src="img/robot_imgs/thumbnails/fr1.jpg" alt="" width="500">
+            <div class="portfolio-box-caption">
+              <div class="project-category text-white-50">
+                Robot: WidowX
+              </div>
+              <div class="project-name">
+                Click to play!
+              </div>
+            </div>
+          </a>
+        </div>
+        <div class="col-lg-4 col-sm-6">
+          <a class="portfolio-box width-fit" href="img/robot_imgs/gifs/frs2_large.gif">
+            <img class="img-fluid" src="img/robot_imgs/thumbnails/fr2.jpg" alt="" width="500">
+            <div class="portfolio-box-caption">
+              <div class="project-category text-white-50">
+                Robot: Google R3
+              </div>
+              <div class="project-name">
+                Click to play!
+              </div>
+            </div>
+          </a>
+        </div>
+        <div class="col-lg-4 col-sm-6">
+          <a class="portfolio-box width-fit" href="img/robot_imgs/gifs/frs3_large.gif">
+            <img class="img-fluid" src="img/robot_imgs/thumbnails/fr3.jpg" alt="" width="500">
+            <div class="portfolio-box-caption">
+              <div class="project-category text-white-50">
+                Robot: Baxter
+              </div>
+              <div class="project-name">
+                Click to play!
+              </div>
+            </div>
+          </a>
+        </div>
+        <div class="col-lg-4 col-sm-6">
+          <a class="portfolio-box width-fit" href="img/robot_imgs/gifs/frs4_large.gif">
+            <img class="img-fluid" src="img/robot_imgs/thumbnails/fr4.jpg" alt="" width="500">
+            <div class="portfolio-box-caption">
+              <div class="project-category text-white-50">
+                Robot: Fetch
+              </div>
+              <div class="project-name">
+                Click to play!
+              </div>
+            </div>
+          </a>
+        </div>
+        <div class="col-lg-4 col-sm-6">
+          <a class="portfolio-box width-fit" href="img/robot_imgs/gifs/frs5_large.gif">
+            <img class="img-fluid" src="img/robot_imgs/thumbnails/fr5.jpg" alt="" width="500">
+            <div class="portfolio-box-caption p-3">
+              <div class="project-category text-white-50">
+                Robot: Franka Panda
+              </div>
+              <div class="project-name">
+                Click to play!
+              </div>
+            </div>
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+  <!-- The numbers Section -->
+  <section class="page-section" id="numbers">
+    <div class="container">
+      <h2 class="text-center mt-0">RoboNet: By the Numbers</h2>
+      <hr class="divider my-4">
+      <div class="row">
+        <div class="col-lg-3 col-md-6 text-center">
+          <div class="mt-5">
+            <!-- <i class="fa fa-4x fa-gem text-primary mb-4"></i> -->
+            <i class="fa fa-camera-retro fa-4x text-primary mb-4"></i>
+            <h3 class="h4 mb-2"> 13M Frames</h3>
+            <p class="text-muted mb-0"> RoboNet contains over 13 million video frames of robot-object interaction. </p>
+          </div>
+        </div>
+        <div class="col-lg-3 col-md-6 text-center">
+          <div class="mt-5">
+            <i class="fa fa-4x  fa-android text-primary mb-4"></i>
+            <h3 class="h4 mb-2">6 Robots</h3>
+            <p class="text-muted mb-0"> We've collected data over 6 robots and 7 grippers! RoboNet can scale to new data from <b>any</b> robot. </p>
+          </div>
+        </div>
+        <div class="col-lg-3 col-md-6 text-center">
+          <div class="mt-5">
+            <i class="fa fa-4x fa-university text-primary mb-4"></i>
+            <h3 class="h4 mb-2"> 4 Institutions </h3>
+            <p class="text-muted mb-0"> Our dataset was collected thanks to the combined effort of 4 different academic and industry institutions. </p>
+          </div>
+        </div>
+        <div class="col-lg-3 col-md-6 text-center">
+          <div class="mt-5">
+            <i class="fa fa-4x fa-heart text-primary mb-4"></i>
+            <h3 class="h4 mb-2">Open Source</h3>
+            <p class="text-muted mb-0"> Of course, RoboNet is open source and we welcome contributions from anyone. Interested? <a href="#contribute">Contact us! </a></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- Call to Action Section -->
+  <!-- <section class="page-section bg-dark text-white">
+    <div class="container text-center">
+      <h2 class="mb-4">Free Download at Start Bootstrap!</h2>
+      <a class="btn btn-light btn-xl" href="https://startbootstrap.com/themes/creative/">Download Now!</a>
+    </div>
+  </section> -->
+
+  <!-- Contact Section -->
+  <section class="page-section" id="contribute">
+    <div class="container">
+      <div class="row justify-content-center">
+        <div class="col-lg-8 text-center">
+          <h2 class="mt-0">Interested in Contributing?</h2>
+          <hr class="divider my-4">
+          <p class="text-muted mb-5">Interested in adding data to RoboNet? Send us an email or fill out the google form and we will get back to you as soon as possible!</p>
+        </div>
+      </div>
+      <div class="row">
+        <div class="col-lg-4 ml-auto text-center mb-5 mb-lg-0">
+          <i class="fa fa-wpforms fa-3x mb-3 text-muted"></i>
+          <div>Link coming soon!</div>
+        </div>
+        <div class="col-lg-4 mr-auto text-center">
+          <!-- <i class="fas fa-envelope fa-3x mb-3 text-muted"></i> -->
+          <i class="fa fa-envelope fa-3x mb-3 text-muted"></i>
+          <!-- Make sure to change the email address in anchor text AND the link below! -->
+          <a class="d-block" href="mailto:robotnetwork66@gmail.com">robotnetwork66@gmail.com</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <!-- <footer class="bg-light py-5">
+    <div class="container">
+      <div class="small text-center text-muted">Copyright &copy; 2019 - Start Bootstrap</div>
+    </div>
+  </footer> -->
+
+  <!-- Bootstrap core JavaScript -->
+  <script src="vendor/jquery/jquery.min.js"></script>
+  <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
+
+  <!-- Plugin JavaScript -->
+  <script src="vendor/jquery-easing/jquery.easing.min.js"></script>
+  <script src="vendor/magnific-popup/jquery.magnific-popup.min.js"></script>
+
+  <!-- Custom scripts for this template -->
+  <script src="js/creative.min.js"></script>
+
+</body>
+
+</html>
