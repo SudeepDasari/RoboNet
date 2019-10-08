@@ -142,7 +142,7 @@ class DataLoader:
 
         return sources, source_probs
 
-    def get_batch(self, sess, mode='val'):
+    def get_batch(self, sess, mode='test'):
         return sess.run([self._inputs, self._targets], feed_dict=self._tensor_multiplexer.get_feed_dict(mode))
 
 
@@ -182,9 +182,13 @@ if __name__ == '__main__':
     dataset = DataLoader(config)
     prediction_model.restore()
     
+    l1_errors = []
     for n in range(args.N):
         input_batch, real_frames = get_prediction_batches(dataset, prediction_model)
         pred_frames = prediction_model(**input_batch)['predicted_frames'][:, :, 0]
+        n_pixels = pred_frames.shape[0] * pred_frames.shape[1] * pred_frames.shape[2] * pred_frames.shape[3]
+        l1_errors.append(np.sum(np.abs(pred_frames - real_frames)) / n_pixels)
+
         for b in range(batch_size):
             for vid, name in zip([real_frames, pred_frames], ['real', 'pred']):
                 images = (vid[b] * 255).astype(np.uint8)
@@ -192,3 +196,5 @@ if __name__ == '__main__':
                 for t in range(images.shape[0]):
                     writer.append_data(images[t])
                 writer.close()
+    print('average l1 error', np.mean(l1_errors))
+    print('std l1 error', np.std(l1_errors))
