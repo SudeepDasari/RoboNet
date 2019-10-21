@@ -11,15 +11,22 @@ from .util import pad_and_concat, render_dist, pad, stbmajor
 import time
 import glob
 from robonet.datasets.util.tensor_multiplexer import MultiplexedTensors
+import yaml
+import shutil
+from robonet.video_prediction.utils.encode_img import construct_image_tile
+from robonet.video_prediction.utils.ffmpeg_gif import encode_gif
+import copy
 
 
 class VPredTrainable(Trainable):
     def _setup(self, config):
+        self._base_config = copy.deepcopy(config)
         # run hparams are passed in through config dict
         self.dataset_hparams, self.model_hparams, self._hparams = self._extract_hparams(config)
         inputs, targets = self._make_dataloaders(config)
 
-        PredictionModel = self._get_model_class(self.model_hparams.pop('model'))
+        self._model_name = self.model_hparams.pop('model')
+        PredictionModel = self._get_model_class(self._model_name)
         self._model = model = PredictionModel(self._data_loader.hparams, self._hparams.n_gpus, self._hparams.graph_type, False)
         est, s_m, t_m = model.model_fn(inputs, targets, tf.estimator.ModeKeys.TRAIN, self.model_hparams)
         self._estimator, self._scalar_metrics, self._tensor_metrics = est, s_m, t_m
@@ -39,6 +46,7 @@ class VPredTrainable(Trainable):
             meta_file = glob.glob(self._hparams.restore_dir + '/*.meta')
             self._restore(meta_file[0])
             self._restore_logs = False
+        self._file_writer, self._log_i = None, 0
 
     def _default_hparams(self):
         default_dict = {
@@ -52,6 +60,7 @@ class VPredTrainable(Trainable):
             'val_fraction': 0.05,
             'max_to_keep': 3,
             'max_steps': 300000,
+            'tf_log_flush_freq': 500
         }
         return HParams(**default_dict)
 
@@ -82,7 +91,6 @@ class VPredTrainable(Trainable):
 
     def _get_input_targets(self, DatasetClass, metadata, dataset_hparams):
         data_loader = DatasetClass(self._hparams.batch_size, metadata, dataset_hparams)
-        assert data_loader.hparams.get('load_random_cam', False), "function assumes loader will grab one random camera feed in multi-cam object"
 
         tensor_names = ['actions', 'images', 'states']
         if 'annotations' in data_loader:
@@ -90,7 +98,8 @@ class VPredTrainable(Trainable):
 
         self._tensor_multiplexer = MultiplexedTensors(data_loader, tensor_names)
         loaded_tensors = [self._tensor_multiplexer[k] for k in tensor_names]
-        
+        assert loaded_tensors[1].get_shape().as_list()[2] == 1, "loader assumes one (potentially random) camera will be loaded in each example!"
+
         self._real_annotations = None
         self._real_images = loaded_tensors[1] = loaded_tensors[1][:, :, 0]              # grab cam 0 for images
         if 'annotations' in data_loader:
@@ -241,13 +250,22 @@ class VPredTrainable(Trainable):
 
         fetches['done'] = itr >= self._hparams.max_steps
         
-        if self._hparams.restore_dir and not self._restore_logs:
-            fetches['restore_logs'] = self._hparams.restore_dir
-            self._restore_logs = True
+        self._tf_log(fetches)
 
         return fetches
 
     def _save(self, checkpoint_dir):
+        dataset_params = self._model.data_hparams.values()
+        model_params = self._model.model_hparams.values()
+        model_params['model'] = self._model_name
+        model_params['graph_type'] = self._hparams.graph_type
+        model_params['scope_name'] = self._model.scope_name
+
+        with open(os.path.join(checkpoint_dir, 'params.yaml'), 'w') as f:
+            yaml.dump({'model': model_params, 'dataset': dataset_params}, f)
+        with open(os.path.join(checkpoint_dir, 'config.yaml'), 'w') as f:
+            yaml.dump(self._base_config, f)
+        
         return self.saver.save(self.sess, os.path.join(checkpoint_dir, 'model'), global_step=self.iteration) + '.meta'
 
     def _restore(self, checkpoints):
@@ -267,3 +285,47 @@ class VPredTrainable(Trainable):
     @property
     def iteration(self):
         return self.sess.run(self._global_step)
+
+    def _tf_log(self, result):
+        if self._hparams.restore_dir and not self._restore_logs:
+            # copy log events to new directory
+            event_dir = self._hparams.restore_dir.split('/checkpoint')[0]
+            event_file = glob.glob('{}/events.out.*'.format(event_dir))
+            if event_file:
+                event_file = event_file[0] 
+                new_path = '{}/{}'.format(self.logdir,event_file.split('/')[-1])
+
+                if os.path.isfile(event_file):
+                    if self._file_writer:
+                        self._file_writer.close()
+                        self._file_writer = None
+                    shutil.copyfile(event_file, new_path)
+
+            # initialize a new file writer
+            self._restore_logs = True
+
+        if self._file_writer is None:
+            self._file_writer = tf.summary.FileWriter(self.logdir)
+        
+        global_step = result['global_step']
+
+        for k, v in result.items():
+            if 'metric/' not in k:
+                continue
+            
+            tag = '/'.join(k.split('/')[1:])
+            summary = tf.Summary()
+            if isinstance(v, np.ndarray):
+                assert v.dtype == np.uint8 and len(v.shape) >= 4, 'assume np arrays are  batched image data'
+                image = tf.Summary.Image()
+                image.height = v.shape[-3]
+                image.width = v.shape[-2]
+                image.colorspace = v.shape[-1]  # 1: grayscale, 2: grayscale + alpha, 3: RGB, 4: RGBA
+                image.encoded_image_string = encode_gif(construct_image_tile(v), 4)
+                summary.value.add(tag=tag, image=image)
+            else:
+                summary.value.add(tag=tag, simple_value=v)
+            self._file_writer.add_summary(summary, global_step)
+        if self._log_i == 0:
+            self._file_writer.flush()
+        self._log_i = (self._log_i + 1) % self._hparams.tf_log_flush_freq

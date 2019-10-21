@@ -9,7 +9,7 @@ def get_vgg_dict(path):
 
 def vgg_preprocess_images(image_tensor):
     """
-    :param image_tensor: float 32 array of Batch x Height x Width x Channel immages (range 0 - 255)
+    :param image_tensor: float 32 array of Batch x Height x Width x Channel immages (range 0 - 1)
     :return: pre-processed images (ready to input to VGG)
     """
     vgg_mean = tf.convert_to_tensor(np.array([103.939, 116.779, 123.68], dtype=np.float32))

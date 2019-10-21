@@ -2,7 +2,7 @@ import tensorflow as tf
 
 
 class BaseGraph:
-    def build_graph(self, inputs, hparams, scope_name='graph'):
+    def build_graph(self, inputs, hparams, n_gpus=1, scope_name='graph'):
         raise NotImplementedError
 
     @staticmethod

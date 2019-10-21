@@ -2,16 +2,17 @@
 # each model is trained on a different fraction of data
 
 # general experiment configurations
-batch_size: 16
+batch_size: 12
 train_class: VPredTrainable 
 max_steps: 500000
-train_fraction: search/grid([0.9, 0.1, 0.01, 0.001])
+train_fraction: 0.9
+save_freq: 1000
 
 # list of dictionaries containing data sources along with filter parameters
 batch_config:
   # selects sawyer data with autograsp enabled (adim=4, robot=sawyer)
   - data_directory: ${DATA_DIR}/hdf5
-    robot: "sawyer"
+    robot: search/grid(["sawyer", ["sawyer", "franka"], ["sawyer", "baxter"], ["sawyer", "baxter", "franka"]])
     adim: 4
 
 # loader_hparams used to initialize loader object
@@ -28,8 +29,11 @@ model_hparams:
   lr: 0.0001
   context_frames: 5
   schedule_sampling_k: 4000
-  use_flows: False
+  use_flows: True
   tv_weight: 0
   enc_filters: [256, 512, 1024]
   lstm_filters: 1024
   dec_filters: [1024, 512]
+  img_flows: 32        
+  skip_flows: 16
+

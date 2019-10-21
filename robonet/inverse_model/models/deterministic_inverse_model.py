@@ -16,16 +16,19 @@ class DeterministicInverseModel(BaseInverseModel):
             "end_lr": 0.0,
             "beta1": 0.9,
             "beta2": 0.999,
-            'l1_weight': 1.0,
         }
 
     def _model_fn(self, model_inputs, model_targets, mode):
         inputs, targets = {}, None
-        inputs['start_images'] = model_targets['images'][:, 0]
-        inputs['goal_images'] = model_targets['images'][:, -1]
-        inputs['T'] = model_inputs['actions'].get_shape().as_list()[1]
-        inputs['adim'] = model_inputs['actions'].get_shape().as_list()[2]
-        targets = model_inputs['actions']
+        inputs['start_images'] = model_inputs['images'][:, 0]
+        inputs['goal_images'] = model_inputs['images'][:, -1]
+        if mode == tf.estimator.ModeKeys.TRAIN:
+            inputs['T'] = model_targets['actions'].get_shape().as_list()[1]
+            inputs['adim'] = model_targets['actions'].get_shape().as_list()[2]
+            inputs['real_actions'] = targets = model_targets['actions']
+        else:
+            inputs['adim'] = model_inputs['adim']
+            inputs['T'] = model_inputs['T']
 
         # build the graph
         self._model_graph = model_graph = self._graph_class()
@@ -46,8 +49,11 @@ class DeterministicInverseModel(BaseInverseModel):
             g_train_op = optimizer.minimize(loss, global_step=global_step)
             
             est = tf.estimator.EstimatorSpec(mode, loss=loss, train_op=g_train_op)
-            return est, {}, {}
+            scalar_summaries = {}
+            if 'ground_truth_sampling_mean' in outputs:
+                scalar_summaries['ground_truth_sampling_mean'] = outputs['ground_truth_sampling_mean']
+            return est, scalar_summaries, {}
             
         #test
-        raise NotImplementedError
+        return outputs['pred_actions']
 

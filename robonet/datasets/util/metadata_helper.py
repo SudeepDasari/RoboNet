@@ -32,7 +32,7 @@ class MetaDataContainer:
     def files(self):
         return ['{}/{}'.format(self._base_path, f) for f in self.frame.index]
     
-    def get_shuffled_files(self, rng):
+    def get_shuffled_files(self, rng=None):
         files = ['{}/{}'.format(self._base_path, f) for f in self.frame.index]
         if rng:
             rng.shuffle(files)

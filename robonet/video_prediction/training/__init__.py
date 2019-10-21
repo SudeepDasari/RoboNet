@@ -1,4 +1,4 @@
-from .ray_util.gif_logger import GIFLogger, TFImageLogger
+from .ray_util.gif_logger import GIFLogger
 
 
 def get_trainable(class_name):

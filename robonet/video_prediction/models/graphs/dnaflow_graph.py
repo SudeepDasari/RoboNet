@@ -6,7 +6,7 @@ from robonet.video_prediction.utils import tf_utils
 
 
 class DNAFlowGraphWrapper(BaseGraph):
-    def build_graph(self, mode, inputs, hparams, scope_name='dnaflow_generator'):
+    def build_graph(self, mode, inputs, hparams, n_gpus=1, scope_name='dnaflow_generator'):
         if hparams.use_states:
             assert "states" in inputs, "graph is building with states but no states in inptus"
         else:

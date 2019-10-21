@@ -13,8 +13,10 @@ batch_config:
 loader_hparams:
   dataset: "RoboNet"
   buffer_size: 10
-  load_T: search/grid([3, 5, 7, 9, 11, 13, 15])
-  color_augmentation: 0.1
+  load_T: search/grid([2, 3, 4])
+  load_random_cam: False
+#  color_augmentation: 0.1
+  img_size: [192, 256] 
 
 # model_hparams used to create graph and loss function
 model_hparams:

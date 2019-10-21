@@ -1,11 +1,7 @@
-# example configuration file for training a set of video prediction model on sawyer data from RoboNet
-# each model is trained on a different fraction of data
-
-# general experiment configurations
 batch_size: 16
-train_class: VPredTrainable 
-max_steps: 300000
-train_fraction: search/grid([0.9, 0.1, 0.01, 0.001])
+train_class: InverseTrainable 
+max_steps: 200000
+
 
 # list of dictionaries containing data sources along with filter parameters
 batch_config:
@@ -18,11 +14,16 @@ batch_config:
 loader_hparams:
   dataset: "RoboNet"
   buffer_size: 10
-  color_augmentation: 0.1
-  load_T: 15
+  load_T: 4  #search/grid([2, 4, 11])
+#  color_augmentation: 0.1
+  img_size: [192, 256]
 
 # model_hparams used to create graph and loss function
 model_hparams:
-  model: deterministic
-  graph_type: vgg_conv
-  tv_weight: 0.0
+  model: DiscretizedInverseModel
+  graph_type: lstm_baseline
+  vgg_path: ${VGG_DIR}
+  context_actions: 2
+  enc_dim: 256
+  latent_dim: 64
+  append_last_action: true

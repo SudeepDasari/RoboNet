@@ -5,13 +5,19 @@ import copy
 
 
 class BaseModel(object):
-    def __init__(self, data_loader_hparams, num_gpus, graph_type, tpu_mode=False, graph_scope='vpred_model'):
+    def __init__(self, data_loader_hparams, num_gpus, graph_type, tpu_mode=False, graph_scope=None):
         self._data_hparams = data_loader_hparams
         self._num_gpus = num_gpus
         self._graph_class = self._get_graph(graph_type)
         self._tpu_mode = tpu_mode
-        self._graph_scope = graph_scope
+        if graph_scope is not None:
+            self._graph_scope = graph_scope
+        else:
+            self._graph_scope = self._default_scope()
     
+    def _default_scope(self):
+        return 'vpred_model'
+
     def _get_graph(self, graph_type):
         return get_graph_class(graph_type)
 
@@ -30,6 +36,7 @@ class BaseModel(object):
         for k in list(params.keys()):
             if k not in default_hparams:
                 params.pop(k)
+                print('key {} specified but is not in hparams!')
 
         self._hparams = HParams(**default_hparams).override_from_dict(params)
         self._hparams.use_tpu = self._use_tpu
@@ -43,3 +50,15 @@ class BaseModel(object):
     
     def _model_fn(self, inputs, targets, mode):
         raise NotImplementedError
+
+    @property
+    def scope_name(self):
+        return self._graph_scope
+
+    @property
+    def data_hparams(self):
+        return copy.deepcopy(self._data_hparams)
+    
+    @property
+    def model_hparams(self):
+        return copy.deepcopy(self._hparams)

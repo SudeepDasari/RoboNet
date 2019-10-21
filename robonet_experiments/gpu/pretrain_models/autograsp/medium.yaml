@@ -1,0 +1,31 @@
+batch_size: 8
+train_class: VPredTrainable 
+max_steps: 500000
+train_fraction: 0.9
+save_freq: 5000
+
+batch_config:
+  - data_directory: ${DATA_DIR}/hdf5
+    primitives: autograsp
+    adim: 4
+    robot: search/grid([["sawyer", "widowx", "baxter", "kuka"], ["sawyer", "widowx", "franka", "kuka"], ["sawyer", "widowx", "baxter", "franka"]])
+
+# loader_hparams used to initialize loader object
+loader_hparams:
+  dataset: "RoboNet"
+  buffer_size: 10
+  color_augmentation: 0.1
+  load_T: 15
+
+# model_hparams used to create graph and loss function
+model_hparams:
+  model: deterministic
+  graph_type: vgg_conv
+  lr: 0.0001
+  context_frames: 5
+  schedule_sampling_k: 4000
+  use_flows: True
+  tv_weight: 0
+  enc_filters: [256, 512, 512]
+  lstm_filters: 512
+  dec_filters: [512, 512]
