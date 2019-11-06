@@ -5,12 +5,13 @@ Please refer to the [project wiki](https://github.com/SudeepDasari/RoboNet/wiki)
 
 If you find the codebase or dataset useful please consider citing our paper.
 ```
-@misc{dasari2019robonet,
+@inproceedings{dasari2019robonet,
     title={RoboNet: Large-Scale Multi-Robot Learning},
     author={Sudeep Dasari and Frederik Ebert and Stephen Tian and Suraj Nair and Bernadette Bucher and Karl Schmeckpeper and Siddharth Singh and Sergey Levine and Chelsea Finn},
     year={2019},
     eprint={1910.11215},
     archivePrefix={arXiv},
-    primaryClass={cs.RO}
+    primaryClass={cs.RO},
+    booktitle={CoRL 2019: Volume 100 Proceedings of Machine Learning Research}
 }
 ```
