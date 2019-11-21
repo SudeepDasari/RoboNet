@@ -1,0 +1,28 @@
+# example configuration file for training a set of video prediction model on sawyer data from RoboNet
+# each model is trained on a different fraction of data
+
+# general experiment configurations
+batch_size: 16
+train_class: NumericHDF5Dataset
+max_steps: 300000
+result_dir: ${VMPC_EXP}/classifier_control/vidpred_training
+
+# list of dictionaries containing data sources along with filter parameters
+batch_config:
+  # selects sawyer data with autograsp enabled (adim=4, robot=sawyer)
+  - data_directory: ${VMPC_DATA}/classifier_control/data_collection/sim/1_obj_cartgripper_xz_rejsamp
+
+# loader_hparams used to initialize loader object
+loader_hparams:
+  dataset: "NumericHDF5Dataset"
+  buffer_size: 10
+  load_T: 15
+  random_shifts: True
+  resize_image: True
+  target_adim: 2
+  target_sdim: 3
+
+# model_hparams used to create graph and loss function
+model_hparams:
+  model: deterministic
+  graph_type: c_dna_flow
