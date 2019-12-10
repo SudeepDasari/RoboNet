@@ -13,13 +13,18 @@ batch_config:
 loader_hparams:
   dataset: "RoboNet"
   buffer_size: 10
-  load_T: search/grid([2, 3, 4])
+  load_T: 4
   load_random_cam: False
 #  color_augmentation: 0.1
   img_size: [192, 256] 
 
 # model_hparams used to create graph and loss function
 model_hparams:
-  model: DeterministicInverseModel
+  append_last_action: true
+  context_actions: 2
+  enc_dim: 256
   graph_type: lstm_baseline
-  vgg_path: ${VGG_DIR}
+  latent_dim: 100
+  model: DiscretizedInverseModel
+  n_convs: 5
+  vgg_path: ~/hdd/
