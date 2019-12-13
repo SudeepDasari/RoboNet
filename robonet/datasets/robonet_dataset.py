@@ -7,15 +7,16 @@ import tensorflow as tf
 import copy
 import multiprocessing
 import pdb
+import os
 
 
 def _load_data(inputs):
-    if len(inputs) == 3:
-        f_name, file_metadata, hparams = inputs
-        return load_data(f_name, file_metadata, hparams)
-    elif len(inputs) == 4:
-        f_name, file_metadata, hparams, rng = inputs
-        return load_data(f_name, file_metadata, hparams, rng)
+    if len(inputs) == 4:
+        f_name, file_metadata, hparams, cache_dir = inputs
+        return load_data(f_name, file_metadata, hparams, cache_dir)
+    elif len(inputs) == 5:
+        f_name, file_metadata, hparams, cache_dir, rng = inputs
+        return load_data(f_name, file_metadata, hparams, cache_dir, rng)
     raise ValueError
 
 
@@ -24,6 +25,12 @@ class RoboNetDataset(BaseVideoDataset):
         source_probs = hparams.pop('source_selection_probabilities', None)
         super(RoboNetDataset, self).__init__(batch_size, dataset_files_or_metadata, hparams)
         self._hparams.source_probs = source_probs
+
+        if self._hparams.loader_cache and os.path.exists(self._hparams.loader_cache):
+            print('WARNING: loader cache exists, delete if database has changed recently!')
+        elif self._hparams.loader_cache:
+            self._hparams.loader_cache = os.path.expanduser(self._hparams.loader_cache)
+            os.makedirs(self._hparams.loader_cache)
 
     def _init_dataset(self):
         if self._hparams.load_random_cam and self._hparams.same_cam_across_sub_batch:
@@ -193,7 +200,7 @@ class RoboNetDataset(BaseVideoDataset):
                         file_hparams[b].cams_to_load = [rng.randint(0, file_metadata[b]['ncam'] - 1)]
                         b += 1
 
-            batch_jobs = [(fn, fm, fh, fr) for fn, fm, fh, fr in zip(file_names, file_metadata, file_hparams, file_rng)]
+            batch_jobs = [(fn, fm, fh, self._hparams.loader_cache, fr) for fn, fm, fh, fr in zip(file_names, file_metadata, file_hparams, file_rng)]
 
             try:
                 batches = self._pool.map_async(_load_data, batch_jobs).get(timeout=self._hparams.pool_timeout)
