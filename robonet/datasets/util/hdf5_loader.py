@@ -57,7 +57,7 @@ def load_camera_imgs(cam_index, file_pointer, file_metadata, target_dims, start_
         buf = io.BytesIO(cam_group['frames'][:].tostring())
         img_buffer = [img for t, img in enumerate(imageio.get_reader(buf, format='mp4')) if start_time <= t < n_load + start_time]
     elif encoding == 'jpg':
-        img_buffer = [cv2.imdecode(cam_group['frame{}'.format(t)][:], cv2.IMREAD_COLOR)[:, :, ::-1] 
+        img_buffer = [cv2.imdecode(cam_group['frame{}'.format(t)][:], cv2.IMREAD_COLOR)
                                 for t in range(start_time, start_time + n_load)]
     else: 
         raise ValueError("encoding not supported")
@@ -67,7 +67,6 @@ def load_camera_imgs(cam_index, file_pointer, file_metadata, target_dims, start_
             images[t] = img
         else:
             images[t] = cv2.resize(img, (target_width, target_height), interpolation=resize_method)
-    
     if image_format == 'RGB':
         return images
     elif image_format == 'BGR':
@@ -144,12 +143,12 @@ def load_annotations(file_pointer, metadata, hparams, cams_to_load):
 
 def load_data(f_name, file_metadata, hparams, rng=None):
     rng = random.Random(rng)
-
     assert os.path.exists(f_name) and os.path.isfile(f_name), "invalid f_name"
+
     with open(f_name, 'rb') as f:
         buf = f.read()
     assert hashlib.sha256(buf).hexdigest() == file_metadata['sha256'], "file hash doesn't match meta-data. maybe delete pkl and re-generate?"
-    
+
     with h5py.File(io.BytesIO(buf)) as hf:
         start_time, n_states = 0, min([file_metadata['state_T'], file_metadata['img_T'], file_metadata['action_T'] + 1])
         assert n_states > 1, "must be more than one state in loaded tensor!"
@@ -158,17 +157,14 @@ def load_data(f_name, file_metadata, hparams, rng=None):
             n_states = hparams.load_T
 
         assert all([0 <= i < file_metadata['ncam'] for i in hparams.cams_to_load]), "cams_to_load out of bounds!"
-        images, selected_cams = [], []
-        for cam_index in hparams.cams_to_load:
-            images.append(load_camera_imgs(cam_index, hf, file_metadata, hparams.img_size, start_time, n_states)[None])
-            selected_cams.append(cam_index)
+        images = [load_camera_imgs(c, hf, file_metadata, hparams.img_size, start_time, n_states)[None] for c in hparams.cams_to_load]
         images = np.swapaxes(np.concatenate(images, 0), 0, 1)
 
         actions = load_actions(hf, file_metadata, hparams).astype(np.float32)[start_time:start_time + n_states-1]
         states = load_states(hf, file_metadata, hparams).astype(np.float32)[start_time:start_time + n_states]
 
         if hparams.load_annotations:
-            annotations = load_annotations(hf, file_metadata, hparams, selected_cams)[start_time:start_time + n_states]
+            annotations = load_annotations(hf, file_metadata, hparams, hparams.cams_to_load)[start_time:start_time + n_states]
             return images, actions, states, annotations
 
     return images, actions, states
@@ -186,6 +182,7 @@ if __name__ == '__main__':
     parser.add_argument('--load_annotations', action='store_true', help="loads annotations if supplied")
     parser.add_argument('--load_steps', type=int, default=0, help="loads <load_steps> steps from the dataset instead of everything")
     args = parser.parse_args()
+    args.file = os.path.expanduser(args.file)
     
     assert 'hdf5' in args.file
     data_folder = '/'.join(args.file.split('/')[:-1])
@@ -193,14 +190,17 @@ if __name__ == '__main__':
 
     hparams = tf.contrib.training.HParams(**default_loader_hparams())
     hparams.load_T = args.load_steps
+    import time
     if args.load_annotations:
         hparams.load_annotations = True
         print(meta_data[meta_data['contains_annotation'] == True])
         meta_data = meta_data[meta_data['contains_annotation'] == True]
-        imgs, actions, states, annot = load_data((args.file, meta_data.get_file_metadata(args.file)), hparams)
+        start = time.time()
+        imgs, actions, states, annot = load_data(args.file, meta_data.get_file_metadata(args.file), hparams)
     else:
-        imgs, actions, states = load_data((args.file, meta_data.get_file_metadata(args.file)), hparams)
-    
+        start = time.time()
+        imgs, actions, states = load_data(args.file, meta_data.get_file_metadata(args.file), hparams)
+    print('took', time.time() - start)
     print('actions', actions.shape)
     print('states', states.shape)
     print('images', imgs.shape)
@@ -215,6 +215,6 @@ if __name__ == '__main__':
     else:
         w = imageio.get_writer('out.gif')
         for i in imgs:
-            w.append_data(i)
+            w.append_data(i[0])
         w.close()
 

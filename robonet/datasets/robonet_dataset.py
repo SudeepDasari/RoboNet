@@ -57,7 +57,6 @@ class RoboNetDataset(BaseVideoDataset):
         self._n_workers = min(self._batch_size, multiprocessing.cpu_count())
         if self._hparams.pool_workers:
             self._n_workers = min(self._hparams.pool_workers, multiprocessing.cpu_count())
-        self._n_pool_resets = 0
         self._pool = multiprocessing.Pool(self._n_workers)
 
         n_train_ex = 0
@@ -194,14 +193,14 @@ class RoboNetDataset(BaseVideoDataset):
                         b += 1
 
             batch_jobs = [(fn, fm, fh, fr) for fn, fm, fh, fr in zip(file_names, file_metadata, file_hparams, file_rng)]
-
+            print('test')
             try:
                 batches = self._pool.map_async(_load_data, batch_jobs).get(timeout=self._hparams.pool_timeout)
             except:
+                print('close')
                 self._pool.terminate()
                 self._pool.close()
                 self._pool = multiprocessing.Pool(self._n_workers)
-                # self._n_pool_resets += 1
                 batches = [_load_data(job) for job in batch_jobs]
 
             ret_vals = []
@@ -279,9 +278,6 @@ class RoboNetDataset(BaseVideoDataset):
         return pl_dict
 
     def build_feed_dict(self, mode):
-        if self._n_pool_resets > self._hparams.MAX_RESETS:
-            raise TimeoutError
-
         fetch = {}
         if mode == self.primary_mode:
             # set placeholders to null
