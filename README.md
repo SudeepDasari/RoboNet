@@ -15,3 +15,6 @@ If you find the codebase or dataset useful please consider citing our paper.
     booktitle={CoRL 2019: Volume 100 Proceedings of Machine Learning Research}
 }
 ```
+
+## Downloading the Dataset
+You can find instructions for downloading the dataset on the [project wiki](https://github.com/SudeepDasari/RoboNet/wiki/Getting-Started) as well. All data is provided under the [Creative Commons BY 4.0](https://creativecommons.org/licenses/by/4.0/legalcode) license.
