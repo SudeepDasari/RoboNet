@@ -23,7 +23,7 @@ class RoboNetDataset(BaseVideoDataset):
     def __init__(self, batch_size, dataset_files_or_metadata, hparams=dict()):
         source_probs = hparams.pop('source_selection_probabilities', None)
         super(RoboNetDataset, self).__init__(batch_size, dataset_files_or_metadata, hparams)
-        self._hparams.source_probs = source_probs
+        self._hparams.source_probs = copy.deepcopy(source_probs)
 
     def _init_dataset(self):
         if self._hparams.load_random_cam and self._hparams.same_cam_across_sub_batch:
@@ -116,7 +116,7 @@ class RoboNetDataset(BaseVideoDataset):
             'splits': (0.9, 0.05, 0.05),             # train, val, test
             'num_epochs': None,                      # maximum number of epochs (None if iterate forever)
             'ret_fnames': False,                     # return file names of loaded hdf5 record
-            'buffer_size': 100,                      # examples to prefetch
+            'buffer_size': 10,                      # examples to prefetch
             'all_modes_max_workers': True,           # use multi-threaded workers regardless of the mode
             'load_random_cam': True,                 # load a random camera for each example
             'same_cam_across_sub_batch': False,      # same camera across sub_batches
@@ -193,7 +193,6 @@ class RoboNetDataset(BaseVideoDataset):
                         b += 1
 
             batch_jobs = [(fn, fm, fh, fr) for fn, fm, fh, fr in zip(file_names, file_metadata, file_hparams, file_rng)]
-            print('test')
             try:
                 batches = self._pool.map_async(_load_data, batch_jobs).get(timeout=self._hparams.pool_timeout)
             except:
@@ -278,26 +277,19 @@ class RoboNetDataset(BaseVideoDataset):
         return pl_dict
 
     def build_feed_dict(self, mode):
-        fetch = {}
         if mode == self.primary_mode:
-            # set placeholders to null
-            images = np.zeros(self._place_holder_dict['images'].get_shape().as_list(), dtype=np.uint8)
-            actions = np.zeros(self._place_holder_dict['actions'].get_shape().as_list(), dtype=np.float32)
-            states = np.zeros(self._place_holder_dict['states'].get_shape().as_list(), dtype=np.float32)
-            if self._hparams.load_annotations:
-                annotations = np.zeros(self._place_holder_dict['annotations'].get_shape().as_list(), dtype=np.float32)
-            if self._hparams.ret_fnames:
-                f_names = ['']
+            return self.get_null_dict()
+        
+        fetch = {}
+        args = next(self._mode_generators[mode])
+        if self._hparams.ret_fnames and self._hparams.load_annotations:
+            images, actions, states, annotations, f_names = args
+        elif self._hparams.ret_fnames:
+            images, actions, states, f_names = args
+        elif self._hparams.load_annotations:
+            images, actions, states, annotations = args
         else:
-            args = next(self._mode_generators[mode])
-            if self._hparams.ret_fnames and self._hparams.load_annotations:
-                images, actions, states, annotations, f_names = args
-            elif self._hparams.ret_fnames:
-                images, actions, states, f_names = args
-            elif self._hparams.load_annotations:
-                images, actions, states, annotations = args
-            else:
-                images, actions, states = args
+            images, actions, states = args
         
         fetch[self._place_holder_dict['images']] = images
         fetch[self._place_holder_dict['actions']] = actions
@@ -306,6 +298,17 @@ class RoboNetDataset(BaseVideoDataset):
             fetch[self._place_holder_dict['f_names']] = f_names
         if self._hparams.load_annotations:
             fetch[self._place_holder_dict['annotations']] = annotations
+        return fetch
+    
+    def get_null_dict(self):
+        fetch = {}
+        fetch[self._place_holder_dict['images']] = np.zeros(self._place_holder_dict['images'].get_shape().as_list(), dtype=np.uint8)
+        fetch[self._place_holder_dict['actions']] = np.zeros(self._place_holder_dict['actions'].get_shape().as_list(), dtype=np.float32)
+        fetch[self._place_holder_dict['states']] = np.zeros(self._place_holder_dict['states'].get_shape().as_list(), dtype=np.float32)
+        if self._hparams.load_annotations:
+            fetch[self._place_holder_dict['annotations']] = np.zeros(self._place_holder_dict['annotations'].get_shape().as_list(), dtype=np.float32)
+        if self._hparams.ret_fnames:
+            fetch[self._place_holder_dict['f_names']] = ['']
         return fetch
 
 

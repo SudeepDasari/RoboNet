@@ -2,13 +2,13 @@ import tensorflow as tf
 from collections import OrderedDict
 
 
-def multiplex_tensors(dataset, key_name, train_cond=None):
+def multiplex_tensors(datasets, key_name, train_cond=None):
     if train_cond is None:
         _train_cond = tf.placeholder(tf.int32, shape=[], name="train_cond")
     else:
         _train_cond = train_cond
 
-    tensors = [dataset[key_name, m] for m in dataset.modes]
+    tensors = [datasets[m][key_name, m] for m in datasets.keys()]
     assert len(tensors), "can't multiplex across no modes!"
 
     if len(tensors) == 1:
@@ -27,15 +27,27 @@ def multiplex_tensors(dataset, key_name, train_cond=None):
 
 class MultiplexedTensors:
     def __init__(self, dataset, tensor_names):
-        self._dataset = dataset
-        self._mode_ind = {}
-        for i, k in enumerate(dataset.modes):
-            self._mode_ind[k] = i
+        self._mode_ind = OrderedDict()
+        self._datasets = OrderedDict()
+        if isinstance(dataset, (list, tuple)):
+            assert len(dataset) == len(dataset[0].modes), "length of dataset list must match number of modes"
+            for d in dataset[1:]:
+                assert set(d.modes) == set(dataset[0].modes), "all datasets must have same modes"
+
+            for i, k in enumerate(dataset[0].modes):
+                self._mode_ind[k] = i
+                self._datasets[k] = dataset[i]
+            self._unique_datasets = dataset
+        else:
+            for i, k in enumerate(dataset.modes):
+                self._mode_ind[k] = i
+                self._datasets[k] = dataset
+            self._unique_datasets = [dataset]
         
         self._train_cond = tf.placeholder(tf.int32, shape=[], name="train_cond")
         self._tensor_dict = OrderedDict()
         for t in tensor_names:
-            self._tensor_dict[t] = multiplex_tensors(dataset, t, self._train_cond)
+            self._tensor_dict[t] = multiplex_tensors(self._datasets, t, self._train_cond)
 
     def __getitem__(self, key):
         return self._tensor_dict[key]
@@ -45,15 +57,15 @@ class MultiplexedTensors:
         return self._tensor_dict
     
     def get_feed_dict(self, mode):
-        dataset_feed = self._dataset.build_feed_dict(mode)
-        if isinstance(mode, int):
-            assert 0 <= mode < len(self._mode_ind.keys()), "mode_index must be in range 0 to len(modes) - 1"
-            dataset_feed[self._train_cond] = mode
-            return dataset_feed
-        
         assert isinstance(mode, str) 
         assert mode in self._mode_ind, "{} not supported! Modes are {}".foramt(mode, self._mode_ind.keys())
-               
+        dataset_feed = self._datasets[mode].build_feed_dict(mode)
+
+        if len(self._unique_datasets) > 1:
+            for d in self._unique_datasets:
+                if d is not self._datasets[mode]:
+                    dataset_feed.update(d.get_null_dict())
+
         dataset_feed[self._train_cond] = self._mode_ind[mode]
         return dataset_feed
 

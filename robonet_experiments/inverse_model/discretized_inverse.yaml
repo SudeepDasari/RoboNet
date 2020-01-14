@@ -7,7 +7,7 @@ max_steps: 200000
 batch_config:
   # selects sawyer data with autograsp enabled (adim=4, robot=sawyer)
   - data_directory: ${DATA_DIR}/hdf5
-    robot: "sawyer"
+    robot: ['widowx', 'R3', 'baxter', 'kuka', 'fetch', 'franka']
     adim: 4
 
 # loader_hparams used to initialize loader object
@@ -15,7 +15,7 @@ loader_hparams:
   dataset: "RoboNet"
   buffer_size: 10
   load_T: 4  #search/grid([2, 4, 11])
-#  color_augmentation: 0.1
+  color_augmentation: 0.1
   img_size: [192, 256]
 
 # model_hparams used to create graph and loss function
@@ -25,5 +25,6 @@ model_hparams:
   vgg_path: ${VGG_DIR}
   context_actions: 2
   enc_dim: 256
-  latent_dim: 64
+  latent_dim: 100
   append_last_action: true
+

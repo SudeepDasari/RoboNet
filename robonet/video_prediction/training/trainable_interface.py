@@ -27,7 +27,7 @@ class VPredTrainable(Trainable):
 
         self._model_name = self.model_hparams.pop('model')
         PredictionModel = self._get_model_class(self._model_name)
-        self._model = model = PredictionModel(self._data_loader.hparams, self._hparams.n_gpus, self._hparams.graph_type, False)
+        self._model = model = PredictionModel(self._train_loader.hparams, self._hparams.n_gpus, self._hparams.graph_type, False)
         est, s_m, t_m = model.model_fn(inputs, targets, tf.estimator.ModeKeys.TRAIN, self.model_hparams)
         self._estimator, self._scalar_metrics, self._tensor_metrics = est, s_m, t_m
         try:
@@ -75,6 +75,7 @@ class VPredTrainable(Trainable):
         Grabs and (optionally) modifies hparams
         """
         self._batch_config = config.pop('batch_config')
+        self._test_batch_config = config.pop('test_batch_config', False)
         dataset_hparams, model_hparams = config.pop('loader_hparams', {}), config.pop('model_hparams', {})
         hparams = self._default_hparams().override_from_dict(config)
         hparams.graph_type = model_hparams.pop('graph_type')                      # required key which tells model which graph to load
@@ -89,34 +90,38 @@ class VPredTrainable(Trainable):
         
         return dataset_hparams, model_hparams, hparams
 
-    def _get_input_targets(self, DatasetClass, metadata, dataset_hparams):
-        data_loader = DatasetClass(self._hparams.batch_size, metadata, dataset_hparams)
-
+    def _make_multiplexed_tensors(self, data_loader):
         tensor_names = ['actions', 'images', 'states']
         if 'annotations' in data_loader:
             tensor_names = ['actions', 'images', 'states', 'annotations']
 
         self._tensor_multiplexer = MultiplexedTensors(data_loader, tensor_names)
         loaded_tensors = [self._tensor_multiplexer[k] for k in tensor_names]
-        assert loaded_tensors[1].get_shape().as_list()[2] == 1, "loader assumes one (potentially random) camera will be loaded in each example!"
 
         self._real_annotations = None
         self._real_images = loaded_tensors[1] = loaded_tensors[1][:, :, 0]              # grab cam 0 for images
         if 'annotations' in data_loader:
             self._real_annotations = loaded_tensors[3] = loaded_tensors[3][:, :, 0]     # grab cam 0 for annotations
-        
+
+        return self._get_input_targets(tensor_names, loaded_tensors)
+    
+    def _get_input_targets(self, tensor_names, loaded_tensors):
         inputs, targets = {'actions': loaded_tensors[0]}, {}
         for k, v in zip(tensor_names[1:], loaded_tensors[1:]):
             inputs[k], targets[k] = v[:, :-1], v
-
-        self._data_loader = data_loader
         return inputs, targets
     
     def _make_dataloaders(self, config):
         DatasetClass = self._get_dataset_class(self.dataset_hparams.pop('dataset'))
-        sources, self.dataset_hparams['source_selection_probabilities'] = self._init_sources()
+        sources, self.dataset_hparams['source_selection_probabilities'] = self._init_sources(self._batch_config)
+        loaders = self._train_loader = DatasetClass(self._hparams.batch_size, sources, self.dataset_hparams)
         
-        inputs, targets = self._get_input_targets(DatasetClass, sources, self.dataset_hparams)
+        if self._test_batch_config:
+            sources, self.dataset_hparams['source_selection_probabilities'] = self._init_sources(self._test_batch_config)
+            self._test_loader = DatasetClass(self._hparams.batch_size, sources, self.dataset_hparams)
+            loaders = [self._train_loader, self._test_loader, self._test_loader]     # train, val, test
+        
+        inputs, targets = self._make_multiplexed_tensors(loaders)
         return inputs, targets
     
     def _default_source_hparams(self):
@@ -126,11 +131,11 @@ class VPredTrainable(Trainable):
             'balance_by_attribute': ['robot']             # split data source into multiple sources where for each source meta[attr] == a, (e.g all examples in one source come from a specific robot)
         }
 
-    def _init_sources(self):
+    def _init_sources(self, batch_config):
         loaded_metadata = {}
         sources, source_probs = [], []
 
-        for source in self._batch_config:
+        for source in batch_config:
             source_hparams = self._default_source_hparams()
             source_hparams.update(source)
             dir_path = os.path.realpath(os.path.expanduser(source_hparams['data_directory']))
