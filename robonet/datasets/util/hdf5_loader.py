@@ -7,6 +7,7 @@ import hashlib
 import numpy as np
 import os
 import random
+import pickle as pkl
 
 
 class ACTION_MISMATCH:
@@ -32,7 +33,8 @@ def default_loader_hparams():
             'impute_autograsp_action': True,
             'load_annotations': False,
             'zero_if_missing_annotation': False, 
-            'load_T': 0                               # TODO implement error checking here for jagged reading
+            'load_T': 0,                                # TODO implement error checking here for jagged reading
+            'loader_cache': ''                          # cache images to disk after mp4 decryption for faster read back
             }
 
 
@@ -141,7 +143,7 @@ def load_annotations(file_pointer, metadata, hparams, cams_to_load):
     return annot
 
 
-def load_data(f_name, file_metadata, hparams, rng=None):
+def load_data(f_name, file_metadata, hparams, cache_dir='', rng=None):
     rng = random.Random(rng)
     assert os.path.exists(f_name) and os.path.isfile(f_name), "invalid f_name"
 
@@ -159,7 +161,6 @@ def load_data(f_name, file_metadata, hparams, rng=None):
         assert all([0 <= i < file_metadata['ncam'] for i in hparams.cams_to_load]), "cams_to_load out of bounds!"
         images = [load_camera_imgs(c, hf, file_metadata, hparams.img_size, start_time, n_states)[None] for c in hparams.cams_to_load]
         images = np.swapaxes(np.concatenate(images, 0), 0, 1)
-
         actions = load_actions(hf, file_metadata, hparams).astype(np.float32)[start_time:start_time + n_states-1]
         states = load_states(hf, file_metadata, hparams).astype(np.float32)[start_time:start_time + n_states]
 
