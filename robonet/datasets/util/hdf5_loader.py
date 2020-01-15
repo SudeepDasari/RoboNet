@@ -142,7 +142,7 @@ def load_annotations(file_pointer, metadata, hparams, cams_to_load):
     return annot
 
 
-def load_data(f_name, file_metadata, hparams, cache_dir='', rng=None):
+def load_data(f_name, file_metadata, hparams, rng=None):
     rng = random.Random(rng)
     assert os.path.exists(f_name) and os.path.isfile(f_name), "invalid f_name"
 

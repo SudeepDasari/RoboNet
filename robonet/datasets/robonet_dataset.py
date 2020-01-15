@@ -3,29 +3,21 @@ from robonet.datasets.util.hdf5_loader import load_data, default_loader_hparams
 from robonet.datasets.util.dataset_utils import color_augment, split_train_val_test
 import numpy as np
 import copy
-import multiprocessing
 import os
-
-
-def _load_data(inputs):
-    if len(inputs) == 4:
-        f_name, file_metadata, hparams, cache_dir = inputs
-        return load_data(f_name, file_metadata, hparams, cache_dir)
-    elif len(inputs) == 5:
-        f_name, file_metadata, hparams, cache_dir, rng = inputs
-        return load_data(f_name, file_metadata, hparams, cache_dir, rng)
-    raise ValueError
+import torch
+import random
 
 
 class RoboNetDataset(BaseVideoDataset):
-    def __init__(self, batch_size, dataset_files_or_metadata, mode='train', hparams=dict()):
-        source_probs = hparams.pop('source_selection_probabilities', None)
-        super(RoboNetDataset, self).__init__(batch_size, dataset_files_or_metadata, mode, hparams)
-        self._hparams['source_probs'] = copy.deepcopy(source_probs)
+    def __init__(self, dataset_files_or_metadata, mode='train', hparams=dict()):
+        hparams['source_probs'] = hparams.pop('source_probs', None)
+        if hparams['source_probs']:
+            assert len(hparams['source_probs']) == len(dataset_files_or_metadata), "requires exactly one source probability per data source"
+            assert all([0 <= x <= 1 for x in hparams['source_probs']]) and sum(hparams['source_probs']) == 1, "not valid probability distribution"
+        super(RoboNetDataset, self).__init__(dataset_files_or_metadata, mode, hparams)
 
     def _init_dataset(self):
         # check batch_size
-        assert self._batch_size % self._hparams['sub_batch_size'] == 0, "sub batches should evenly divide batch_size!"
         assert self._hparams['load_T'] >=0, "load_T should be non-negative!"
 
         # smallest max step length of all dataset sources 
@@ -35,20 +27,30 @@ class RoboNetDataset(BaseVideoDataset):
         else:
             assert self._hparams['load_T'] <= min_steps, "ask to load {} steps but some records only have {}!".format(self._hparams['min_T'], min_steps)
 
-        self._n_workers = min(self._batch_size, multiprocessing.cpu_count())
-        if self._hparams['pool_workers']:
-            self._n_workers = min(self._hparams['pool_workers'], multiprocessing.cpu_count())
-        self._pool = multiprocessing.Pool(self._n_workers)
-
         mode_index = [i for i, m in enumerate(self.modes) if m == self._mode][0]
-        self._sources, self._sources_metadata = [], []
+        sources, sources_metadata = [], []
         for m_ind, metadata in enumerate(self._metadata):
             files_per_source = self._split_files(m_ind, metadata)
             assert len(files_per_source) == len(self.modes), "files should be split into {} sets (it's okay if sets are empty)".format(len(self.modes))
-            self._sources.append(files_per_source[mode_index])
-            self._sources_metadata.append(metadata)
+            sources.append(files_per_source[mode_index])
+            sources_metadata.append(metadata)
 
-        return sum([len(s) for s in self._sources])
+        self._files = []
+        if self._hparams['source_probs'] is not None and len(sources) > 1:
+            total_files = max([len(s) / sp for s, sp in zip(sources, self._hparams['source_probs'])])
+            for s, p, sm in zip(sources, self._hparams['source_probs'], sources_metadata):
+                n_samples = int(np.ceil(total_files * p))
+                if n_samples > len(s):
+                    samples = np.concatenate((np.arange(len(s)), np.random.choice(len(sources), size=n_samples - len(s), replace=n_samples-len(s)>len(s))))
+                else:
+                    samples = np.random.choice(len(s), size=n_samples, replace=False)
+                self._files.extend([(s[i], sm) for i in samples])
+        else:
+            for source, metadata in zip(sources, sources_metadata):
+                self._files.extend([(s, metadata) for s in source])
+        
+        self._random_generator.shuffle(self._files)
+        return len(self._files)
 
     def _split_files(self, source_number, metadata):
         if self._hparams['train_ex_per_source'] != [-1]:
@@ -60,17 +62,13 @@ class RoboNetDataset(BaseVideoDataset):
         default_dict = {
             'RNG': 11381294392481135266,             # random seed to initialize data loader rng
             'use_random_train_seed': False,          # use a random seed for training objects 
-            'sub_batch_size': 1,                     # sub batch to sample from each source
             'splits': (0.9, 0.05, 0.05),             # train, val, test
             'num_epochs': None,                      # maximum number of epochs (None if iterate forever)
             'ret_fnames': False,                     # return file names of loaded hdf5 record
             'all_modes_max_workers': True,           # use multi-threaded workers regardless of the mode
             'load_random_cam': True,                 # load a random camera for each example
-            'same_cam_across_sub_batch': False,      # same camera across sub_batches
-            'pool_workers': 0,                       # number of workers for pool (if 0 uses batch_size workers)
             'color_augmentation':0.0,                # std of color augmentation (set to 0 for no augmentations)
             'train_ex_per_source': [-1],             # list of train_examples per source (set to [-1] to rely on splits only)
-            'pool_timeout': 10,                      # max time to wait to get batch from pool object
             'MAX_RESETS': 10                         # maximum number of pool resets before error is raised in main thread
         }
         for k, v in default_loader_hparams().items():
@@ -79,111 +77,41 @@ class RoboNetDataset(BaseVideoDataset):
         return default_dict
 
     def __iter__(self):
-        sources = self._sources
-        sources_metadata = self._sources_metadata
-        rng = self._random_generator
-        mode = self._mode
+        worker_info = torch.utils.data.get_worker_info()
+        rng = random.Random(self._random_generator.getrandbits(32))
 
-        file_indices, source_epochs = [[0 for _ in range(len(sources))] for _ in range(2)]
-        while True:
-            file_hparams = [copy.deepcopy(self._hparams) for _ in range(self._batch_size)]
-            if self._hparams['RNG']:
-                file_rng = [rng.getrandbits(64) for _ in range(self._batch_size)]
-            else:
-                file_rng = [None for _ in range(self._batch_size)]
-            
-            file_names, file_metadata = [], []
-            b = 0
-            sources_selected_thus_far = []
-            while len(file_names) < self._batch_size:
-                # if source_probs is set do a weighted random selection
-                if self._hparams['source_probs']:
-                    selected_source = self._np_rng.choice(len(sources), 1, p=self._hparams['source_probs'])[0]
-                # if # sources <= # sub_batches then sample each source at least once per batch
-                elif len(sources) <= self._batch_size // self._hparams['sub_batch_size'] and b // self._hparams['sub_batch_size'] < len(sources):
-                    selected_source = b // self._hparams['sub_batch_size']
-                elif len(sources) > self._batch_size // self._hparams['sub_batch_size']:
-                    selected_source = rng.randint(0, len(sources) - 1)
-                    while selected_source in sources_selected_thus_far:
-                        selected_source = rng.randint(0, len(sources) - 1)
-                else:
-                    selected_source = rng.randint(0, len(sources) - 1)
-                sources_selected_thus_far.append(selected_source)
-
-                for sb in range(self._hparams['sub_batch_size']):
-                    selected_file = sources[selected_source][file_indices[selected_source]]
-                    file_indices[selected_source] += 1
-                    selected_file_metadata = sources_metadata[selected_source].get_file_metadata(selected_file)
-
-                    file_names.append(selected_file)
-                    file_metadata.append(selected_file_metadata)
-                    
-                    if file_indices[selected_source] >= len(sources[selected_source]):
-                        file_indices[selected_source] = 0
-                        source_epochs[selected_source] += 1
-
-                        if mode == 'train' and self._hparams['num_epochs'] is not None and source_epochs[selected_source] >= self._hparams['num_epochs']:
-                            break
-                        rng.shuffle(sources[selected_source])
-
-                b += self._hparams['sub_batch_size']
-
+        file_hparams = copy.deepcopy(self._hparams)
+        if worker_info is None:
+            assigned_files = self._files
+        else:
+            per_worker = int(np.ceil(len(self._files) / float(worker_info.num_workers)))
+            iter_start = worker_info.id * per_worker
+            iter_end = min(iter_start + per_worker, len(self._files))
+            assigned_files = self._files[iter_start:iter_end]
+        
+        for f_name, metadata in assigned_files:
+            f_metadata = metadata.get_file_metadata(f_name)
             if self._hparams['load_random_cam']:
-                b = 0
-                while b < self._batch_size:
-                    if self._hparams['same_cam_across_sub_batch']:
-                        selected_cam = [rng.randint(0, min([file_metadata[b + sb]['ncam'] for sb in range(self._hparams['sub_batch_size'])]) - 1)]
-                        for sb in range(self._hparams['sub_batch_size']):
-                            file_hparams[b + sb]['cams_to_load'] = selected_cam
-                        b += self._hparams['sub_batch_size']
-                    else:
-                        file_hparams[b]['cams_to_load'] = [rng.randint(0, file_metadata[b]['ncam'] - 1)]
-                        b += 1
-
-            batch_jobs = [(fn, fm, fh, fr) for fn, fm, fh, fr in zip(file_names, file_metadata, file_hparams, file_rng)]
-            try:
-                batches = self._pool.map_async(_load_data, batch_jobs).get(timeout=self._hparams['pool_timeout'])
-            except:
-                print('close')
-                self._pool.terminate()
-                self._pool.close()
-                self._pool = multiprocessing.Pool(self._n_workers)
-                batches = [_load_data(job) for job in batch_jobs]
-
-            ret_vals = []
-            for i, b in enumerate(batches):
-                if i == 0:
-                    for value in b:
-                        ret_vals.append([value[None]])
-                else:
-                    for v_i, value in enumerate(b):
-                        ret_vals[v_i].append(value[None])
-
-            ret_vals = [np.concatenate(v) for v in ret_vals]
-            if self._hparams['ret_fnames']:
-                ret_vals = ret_vals + [file_names]
-
-            yield tuple(ret_vals)
+                file_hparams['cams_to_load'] = [rng.randint(0, int(f_metadata['ncam']) - 1)]
+            yield load_data(f_name, f_metadata, file_hparams, rng.getrandbits(32))
 
 
 def _timing_test(N, loader):
     import time
     import random
 
-    mode_tensors = {}
-    for m in loader.modes:
-        mode_tensors[m] = [loader[x, m] for x in ['images', 'states', 'actions']]
-
     timings = []
-    for m in loader.modes:
-        for i in range(N):
-            
-            start = time.time()
-            s.run(mode_tensors[m], feed_dict=loader.build_feed_dict(m))
-            run_time = time.time() - start
-            if m == 'train':
-                timings.append(run_time)
-            print('run {}, mode {} took {} seconds'.format(i, m, run_time))
+    i = 0 
+    start = time.time()
+    for _ in loader:
+        run_time = time.time() - start
+        timings.append(run_time)
+        print('run {}, took {} seconds'.format(i, run_time))
+        i += 1
+        start = time.time()
+
+        if i >= N:
+            break
 
     if timings:
         print('train runs took on average {} seconds'.format(sum(timings) / len(timings)))
@@ -200,30 +128,25 @@ if __name__ == '__main__':
     parser.add_argument('--load_steps', type=int, default=0, help='if value is provided will load <load_steps> steps')
     args = parser.parse_args()
 
-    hparams = {'RNG': 0, 'ret_fnames': True, 'load_T': args.load_steps, 'sub_batch_size': 8, 'action_mismatch': 3, 'state_mismatch': 3, 'splits':[0.8, 0.1, 0.1], 'same_cam_across_sub_batch':True}
+    hparams = {'RNG': 0, 'ret_fnames': True, 'load_T': args.load_steps, 'action_mismatch': 3, 'state_mismatch': 3, 'splits':[0.8, 0.1, 0.1]}
     if args.robots:
         from robonet.datasets import load_metadata
         meta_data = load_metadata(args.path)
-        hparams['same_cam_across_sub_batch'] = True
-        dataset = RoboNetDataset(args.batch_size, [meta_data[meta_data['robot'] == r] for r in args.robots], hparams=hparams)
+        hparams['source_probs'] = [1.0 / len(args.robots) for _ in args.robots]
+        dataset = RoboNetDataset([meta_data[meta_data['robot'] == r] for r in args.robots], hparams=hparams)
     else:
-        dataset = RoboNetDataset(args.batch_size, args.path, hparams=hparams)
-    loader = dataset.make_dataloader()
+        dataset = RoboNetDataset(args.path, hparams=hparams)
     
-    import time
-    start = time.time()
-    for out in loader:
-        print(time.time() - start, out[0].shape)
-        start = time.time()
-
+    loader = dataset.make_dataloader(args.batch_size)
     if args.time_test:
         _timing_test(args.time_test, loader)
         exit(0)
     
+    out_tensors = next(iter(loader))
     import imageio
     writer = imageio.get_writer('test_frames.gif')
     for t in range(out_tensors[0].shape[1]):
-        writer.append_data((np.concatenate([b for b in out_tensors[0][:, t, 0]], axis=-2) * 255).astype(np.uint8))
+        writer.append_data(np.concatenate([b for b in out_tensors[0][:, t, 0]], axis=-2))
     writer.close()
     import pdb; pdb.set_trace()
     print('loaded tensors!')

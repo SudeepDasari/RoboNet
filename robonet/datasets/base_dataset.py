@@ -5,14 +5,12 @@ from .util.metadata_helper import load_metadata, MetaDataContainer
 import random
 import numpy as np
 from torch.utils.data import IterableDataset, DataLoader
+from multiprocessing import cpu_count
 
 
 BATCH_SHUFFLE_RNG = 5011757766786901527
 class BaseVideoDataset(IterableDataset):
-    def __init__(self, batch_size, dataset_files_or_metadata, mode='train', hparams=dict()):
-        assert isinstance(batch_size, int), "batch_size must be an integer"
-        self._batch_size = batch_size
-
+    def __init__(self, dataset_files_or_metadata, mode='train', hparams=dict()):
         if isinstance(dataset_files_or_metadata, str):
             self._metadata = [load_metadata(dataset_files_or_metadata)]
         elif isinstance(dataset_files_or_metadata, MetaDataContainer):
@@ -35,7 +33,6 @@ class BaseVideoDataset(IterableDataset):
         self._mode = mode
         self._init_rng()
         self._len = self._init_dataset()
-        print('loaded {} files'.format(self._len))
 
     def _init_dataset(self):
         raise NotImplementedError
@@ -55,7 +52,7 @@ class BaseVideoDataset(IterableDataset):
     def _get_default_hparams():
         default_dict = {
             'RNG': 11381294392481135266,
-            'use_random_train_seed': False
+            'use_random_train_seed': False,
         }
         return default_dict
 
@@ -70,5 +67,7 @@ class BaseVideoDataset(IterableDataset):
     def modes(self):
         return ['train', 'val', 'test']
 
-    def make_dataloader(self, pin_memory=True):
-        return DataLoader(self, batch_size=None, num_workers=0, pin_memory=pin_memory)
+    def make_dataloader(self, batch_size, n_workers=-1, pin_memory=True):
+        if n_workers < 0:
+            n_workers = min(batch_size, cpu_count())
+        return DataLoader(self, batch_size=batch_size, num_workers=n_workers, pin_memory=pin_memory)
