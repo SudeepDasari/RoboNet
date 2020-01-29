@@ -237,7 +237,9 @@ class RoboNetDataset(BaseVideoDataset):
     def _hdf5_generator(self, sources, sources_metadata, rng, mode):
 
         # If multiple workers, slice the sources to partition assigned to specific worker
-        if self._n_workers > 1:
+        # TODO: This is a weird thing I did for debugging to not slice on partitions while testing
+        # Should probably find a more stable way for this to work
+        if hasattr(self, "worker_mode_partition"):
             sources = [
                 src[slice(*ptx)]
                 for ptx, src in zip(self.worker_mode_partition[mode], sources)
@@ -366,9 +368,10 @@ class RoboNetDataset(BaseVideoDataset):
             if self._hparams.ret_fnames:
                 ret_vals = ret_vals + [file_names]
 
-            yield tuple(ret_vals)
+            yield self._get_dict(*tuple(ret_vals))
 
     def _get_dict(self, *args):
+
         if self._hparams.ret_fnames and self._hparams.load_annotations:
             images, actions, states, annotations, f_names = args
         elif self._hparams.ret_fnames:
@@ -381,6 +384,8 @@ class RoboNetDataset(BaseVideoDataset):
         images = torch.tensor(images, dtype=torch.uint8)
         actions = torch.tensor(actions, dtype=torch.float32)
         states = torch.tensor(states, dtype=torch.float32)
+
+        pdb.set_trace()
 
         out_dict = {}
         height, width = self._hparams.img_size
@@ -511,14 +516,14 @@ if __name__ == "__main__":
 
     # TODO: Change to "num_workers=ds._n_workers" when done testing
     loader = torch.utils.data.DataLoader(
-        ds, num_workers=8, worker_init_fn=worker_init_fn
+        ds, num_workers=ds._n_workers, worker_init_fn=worker_init_fn
     )
 
-    for batch in loader:
-        pdb.set_trace()
-        break
+    # for batch in loader:
+    #     pdb.set_trace()
+    #     break
 
-    # batch = ds.__getitem__(0)
+    batch = ds.__getitem__(0)
 
     # tensors = [dataset[x, args.mode] for x in ["images", "states", "actions", "f_names"]]
     # s = tf.Session()
