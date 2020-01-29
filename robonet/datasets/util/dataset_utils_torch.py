@@ -1,25 +1,43 @@
-import tensorflow as tf
+import torch
 import pdb
 import numpy as np
+import pytorch_colors as colors
 
 
 def color_augment(image, noise_range=0.2):
     assert noise_range > 0, "noise_range must be positive"
 
-    bs = image.get_shape().as_list()[0]
-    shape = [bs] + [1 for _ in range(len(image.get_shape().as_list()) - 1)]
+    bs = image.shape[0]
+    shape = [bs] + [1 for _ in range(len(image.shape) - 1)]
     min_noise = -noise_range
     max_noise = noise_range
-    rand_h = tf.random_uniform(shape, minval=min_noise, maxval=max_noise)
-    rand_s = tf.random_uniform(shape, minval=min_noise, maxval=max_noise)
-    rand_v = tf.random_uniform(shape, minval=min_noise, maxval=max_noise)
-    image_hsv = tf.image.rgb_to_hsv(image)
-    h_, s_, v_ = tf.split(image_hsv, 3, -1)
-    stack_mod = tf.clip_by_value(
-        tf.concat([h_ + rand_h, s_ + rand_s, v_ + rand_v], axis=-1), 0, 1.0
-    )
-    image_rgb = tf.image.hsv_to_rgb(stack_mod)
-    return image_rgb
+    rand_h = torch.FloatTensor(shape).uniform_(min_noise, max_noise)
+    rand_s = torch.FloatTensor(shape).uniform_(min_noise, max_noise)
+    rand_v = torch.FloatTensor(shape).uniform_(min_noise, max_noise)
+    pdb.set_trace()
+
+    image_hsv = colors.rgb_to_hsv(image)
+
+    torch.rand(shape)
+
+
+# def color_augment(image, noise_range=0.2):
+#     assert noise_range > 0, "noise_range must be positive"
+
+#     bs = image.get_shape().as_list()[0]
+#     shape = [bs] + [1 for _ in range(len(image.get_shape().as_list()) - 1)]
+#     min_noise = -noise_range
+#     max_noise = noise_range
+#     rand_h = tf.random_uniform(shape, minval=min_noise, maxval=max_noise)
+#     rand_s = tf.random_uniform(shape, minval=min_noise, maxval=max_noise)
+#     rand_v = tf.random_uniform(shape, minval=min_noise, maxval=max_noise)
+#     image_hsv = tf.image.rgb_to_hsv(image)
+#     h_, s_, v_ = tf.split(image_hsv, 3, -1)
+#     stack_mod = tf.clip_by_value(
+#         tf.concat([h_ + rand_h, s_ + rand_s, v_ + rand_v], axis=-1), 0, 1.0
+#     )
+#     image_rgb = tf.image.hsv_to_rgb(stack_mod)
+#     return image_rgb
 
 
 def split_train_val_test(metadata, splits=None, train_ex=None, rng=None):
