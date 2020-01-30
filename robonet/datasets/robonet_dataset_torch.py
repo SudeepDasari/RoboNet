@@ -108,8 +108,6 @@ class RoboNetDataset(BaseVideoDataset):
             self._n_workers = min(
                 self._hparams.pool_workers, multiprocessing.cpu_count()
             )
-        # self._n_pool_resets = 0
-        # self._pool = multiprocessing.Pool(self._n_workers)
 
         # ---------------------------------------------------------------
         # ---------------------------------------------------------------
@@ -142,7 +140,6 @@ class RoboNetDataset(BaseVideoDataset):
         # NOTE: Each index in mode_sources corresponds to mode --> i.e. self.modes[0] -> self.mode_sources[0]
         # mode_sources: [[filepaths, metadata], [filepaths, metadata], [filepaths, metadata]]
 
-        # self._place_holder_dict = self._get_placeholders()
         self._mode_generators = {}
         self._mode_n_ex_per_source = {}
 
@@ -156,7 +153,6 @@ class RoboNetDataset(BaseVideoDataset):
                 total_n_ex = sum([len(f) for f in mode_source_files])
 
                 self._mode_n_ex_per_source[name] = [len(f) for f in mode_source_files]
-                print(self._mode_n_ex_per_source[name])
 
                 self.gen_func = self._wrap_generator(
                     mode_source_files, mode_source_metadata, rng, name
@@ -164,9 +160,6 @@ class RoboNetDataset(BaseVideoDataset):
 
                 self._mode_generators[name] = self.gen_func()
                 # if name == self.primary_mode:
-                #     self._mode_generators[name] = self.gen_func()
-                #     pass
-                #     # next(gen_func())
 
                 #     # dataset = tf.data.Dataset.from_generator(gen_func, output_format)
                 #     # dataset = dataset.map(self._get_dict)
@@ -194,8 +187,6 @@ class RoboNetDataset(BaseVideoDataset):
     def _get(self, key, mode):
         if mode == self.primary_mode:
             return next(self.__iter__())
-
-            # self._data_loader_dict[key]
 
         if key == "images":
             return self._img_tensor
@@ -341,19 +332,7 @@ class RoboNetDataset(BaseVideoDataset):
                 )
             ]
 
-            # pdb.set_trace()
             batches = [_load_data(job) for job in batch_jobs]
-
-            # try:
-            #     batches = self._pool.map_async(_load_data, batch_jobs).get(
-            #         timeout=self._hparams.pool_timeout
-            #     )
-            # except:
-            #     self._pool.terminate()
-            #     self._pool.close()
-            #     self._pool = multiprocessing.Pool(self._n_workers)
-            #     # self._n_pool_resets += 1
-            #     batches = [_load_data(job) for job in batch_jobs]
 
             ret_vals = []
             for i, b in enumerate(batches):
@@ -422,30 +401,31 @@ class RoboNetDataset(BaseVideoDataset):
         return out_dict
 
 
-def _timing_test(N, loader):
-    import time
-    import random
+# TODO: Rewrite or deprecate for PyTorch
+# def _timing_test(N, loader):
+#     import time
+#     import random
 
-    mode_tensors = {}
-    for m in loader.modes:
-        mode_tensors[m] = [loader[x, m] for x in ["images", "states", "actions"]]
-    s = tf.Session()
+#     mode_tensors = {}
+#     for m in loader.modes:
+#         mode_tensors[m] = [loader[x, m] for x in ["images", "states", "actions"]]
+#     s = tf.Session()
 
-    timings = []
-    for m in loader.modes:
-        for i in range(N):
+#     timings = []
+#     for m in loader.modes:
+#         for i in range(N):
 
-            start = time.time()
-            s.run(mode_tensors[m], feed_dict=loader.build_feed_dict(m))
-            run_time = time.time() - start
-            if m == "train":
-                timings.append(run_time)
-            print("run {}, mode {} took {} seconds".format(i, m, run_time))
+#             start = time.time()
+#             s.run(mode_tensors[m], feed_dict=loader.build_feed_dict(m))
+#             run_time = time.time() - start
+#             if m == "train":
+#                 timings.append(run_time)
+#             print("run {}, mode {} took {} seconds".format(i, m, run_time))
 
-    if timings:
-        print(
-            "train runs took on average {} seconds".format(sum(timings) / len(timings))
-        )
+#     if timings:
+#         print(
+#             "train runs took on average {} seconds".format(sum(timings) / len(timings))
+#         )
 
 
 if __name__ == "__main__":
@@ -484,7 +464,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     hparams = {
-        "color_augmentation": 0.5,  # std of color augmentation (set to 0 for no augmentations)
+        "color_augmentation": 0.3,  # std of color augmentation (set to 0 for no augmentations)
         "RNG": 0,
         "ret_fnames": True,
         "load_T": args.load_steps,
@@ -508,35 +488,28 @@ if __name__ == "__main__":
     else:
         ds = RoboNetDataset(args.batch_size, args.path, hparams=hparams)
 
-    if args.time_test:
-        _timing_test(args.time_test, ds)
-        exit(0)
+    # TODO: Rewrite or deprecate for PyTorch
+    # if args.time_test:
+    #     _timing_test(args.time_test, ds)
+    #     exit(0)
 
-    # TODO: Change to "num_workers=ds._n_workers" when done testing
-    loader = torch.utils.data.DataLoader(
-        ds, num_workers=ds._n_workers, worker_init_fn=worker_init_fn
-    )
-
+    # Uncomment if you want to test the the multiprocess DataLoader
+    # ----------------------------------------------------------------
+    # loader = torch.utils.data.DataLoader(
+    #     ds, num_workers=ds._n_workers, worker_init_fn=worker_init_fn
+    # )
     # for batch in loader:
-    #     pdb.set_trace()
-    #     break
-    pdb.set_trace()
+    #     continue
+    # ----------------------------------------------------------------
+
     batch = next(ds.__iter__())
 
-    # tensors = [dataset[x, args.mode] for x in ["images", "states", "actions", "f_names"]]
-    # s = tf.Session()
-    # out_tensors = s.run(tensors, feed_dict=dataset.build_feed_dict(args.mode))
+    imageio.mimsave(
+        "test_frames.gif",
+        (batch["images"].reshape(-1, *ds.hparams.img_size, 3) * 255.0)
+        .numpy()
+        .astype(np.uint8),
+    )
 
-    writer = imageio.get_writer("test_frames.gif")
-    for t in range(batch[0].shape[1]):
-        writer.append_data(
-            (np.concatenate([b for b in batch[0][:, t, 0]], axis=-2) * 255).astype(
-                np.uint8
-            )
-        )
-    writer.close()
-    import pdb
-
-    pdb.set_trace()
-    print("loaded tensors!")
+    print("Loaded tensors!")
 

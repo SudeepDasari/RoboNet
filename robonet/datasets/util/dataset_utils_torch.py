@@ -15,27 +15,37 @@ def color_augment(image, noise_range=0.2):
 
     """
     assert noise_range > 0, "noise_range must be positive"
+    # pdb.set_trace()
+    bs, T, ncams, height, width, ch = image.shape
 
-    bs = image.shape[0]
-    shape = [bs] + [1 for _ in range(len(image.shape) - 1)]
     min_noise = -noise_range
     max_noise = noise_range
 
-    height, width, _ = image.shape[-3:]
-
     # Library requires (batch, channels, height, width) format
-    image_hsv = colors.rgb_to_hsv(image.view(-1, 3, height, width))
-    h_, s_, v_ = torch.unbind(image_hsv, dim=1)
+    image_hsv = colors.rgb_to_hsv(
+        image.reshape(-1, height, width, ch).permute(0, 3, 1, 2)
+    )
 
-    rand_h = torch.FloatTensor(h_.shape).uniform_(min_noise, max_noise)
-    rand_s = torch.FloatTensor(s_.shape).uniform_(min_noise, max_noise)
-    rand_v = torch.FloatTensor(v_.shape).uniform_(min_noise, max_noise)
+    intermed = image_hsv.permute(0, 2, 3, 1).reshape(image.shape)
+
+    h_, s_, v_ = torch.split(intermed, 1, dim=-1)
+
+    # NOTE: We use consistent noise across different camera views. Might want to change
+    batch_noise = [bs] + [1 for _ in range(image.ndim - 1)]
+
+    rand_h = torch.empty(batch_noise).uniform_(min_noise, max_noise)
+    rand_s = torch.empty(batch_noise).uniform_(min_noise, max_noise)
+    rand_v = torch.empty(batch_noise).uniform_(min_noise, max_noise)
 
     stack_mod = torch.clamp(
-        torch.stack([h_ + rand_h, s_ + rand_s, v_ + rand_v], dim=1), 0, 1.0
+        torch.cat([h_ + rand_h, s_ + rand_s, v_ + rand_v], dim=-1), 0, 1.0
     )
-    image_rgb = colors.hsv_to_rgb(stack_mod)
-    return image_rgb.view(image.shape)
+
+    image_rgb = colors.hsv_to_rgb(
+        stack_mod.reshape(-1, height, width, ch).permute(0, 3, 1, 2)
+    )
+
+    return image_rgb.permute(0, 2, 3, 1).reshape(image.shape)
 
 
 def split_train_val_test(metadata, splits=None, train_ex=None, rng=None):
