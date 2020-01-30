@@ -5,39 +5,37 @@ import pytorch_colors as colors
 
 
 def color_augment(image, noise_range=0.2):
+    """Add noise in HSV domain to increase color contrast
+    Inputs:
+        image                   : torch.Tensor((batch, T, n_cams, height, width, channels))
+        noise_range (optional)  : float
+    
+    Outputs:
+        image_rgb               : torch.Tensor((batch, T, n_cams, height, width, channels))
+
+    """
     assert noise_range > 0, "noise_range must be positive"
 
     bs = image.shape[0]
     shape = [bs] + [1 for _ in range(len(image.shape) - 1)]
     min_noise = -noise_range
     max_noise = noise_range
-    rand_h = torch.FloatTensor(shape).uniform_(min_noise, max_noise)
-    rand_s = torch.FloatTensor(shape).uniform_(min_noise, max_noise)
-    rand_v = torch.FloatTensor(shape).uniform_(min_noise, max_noise)
-    pdb.set_trace()
 
-    image_hsv = colors.rgb_to_hsv(image)
+    height, width, _ = image.shape[-3:]
 
-    torch.rand(shape)
+    # Library requires (batch, channels, height, width) format
+    image_hsv = colors.rgb_to_hsv(image.view(-1, 3, height, width))
+    h_, s_, v_ = torch.unbind(image_hsv, dim=1)
 
+    rand_h = torch.FloatTensor(h_.shape).uniform_(min_noise, max_noise)
+    rand_s = torch.FloatTensor(s_.shape).uniform_(min_noise, max_noise)
+    rand_v = torch.FloatTensor(v_.shape).uniform_(min_noise, max_noise)
 
-# def color_augment(image, noise_range=0.2):
-#     assert noise_range > 0, "noise_range must be positive"
-
-#     bs = image.get_shape().as_list()[0]
-#     shape = [bs] + [1 for _ in range(len(image.get_shape().as_list()) - 1)]
-#     min_noise = -noise_range
-#     max_noise = noise_range
-#     rand_h = tf.random_uniform(shape, minval=min_noise, maxval=max_noise)
-#     rand_s = tf.random_uniform(shape, minval=min_noise, maxval=max_noise)
-#     rand_v = tf.random_uniform(shape, minval=min_noise, maxval=max_noise)
-#     image_hsv = tf.image.rgb_to_hsv(image)
-#     h_, s_, v_ = tf.split(image_hsv, 3, -1)
-#     stack_mod = tf.clip_by_value(
-#         tf.concat([h_ + rand_h, s_ + rand_s, v_ + rand_v], axis=-1), 0, 1.0
-#     )
-#     image_rgb = tf.image.hsv_to_rgb(stack_mod)
-#     return image_rgb
+    stack_mod = torch.clamp(
+        torch.stack([h_ + rand_h, s_ + rand_s, v_ + rand_v], dim=1), 0, 1.0
+    )
+    image_rgb = colors.hsv_to_rgb(stack_mod)
+    return image_rgb.view(image.shape)
 
 
 def split_train_val_test(metadata, splits=None, train_ex=None, rng=None):

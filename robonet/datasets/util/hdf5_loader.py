@@ -122,11 +122,11 @@ def load_states(file_pointer, file_metadata, target_sdim, state_mismatch):
     if target_sdim == sdim:
         return file_pointer["env"]["state"][:]
 
-    elif sdim < target_sdim and (state_mismatch == STATE_MISMATCH.PAD_ZERO):
+    elif sdim < target_sdim and (state_mismatch & STATE_MISMATCH.PAD_ZERO):
         pad = np.zeros((s_T, target_sdim - sdim), dtype=np.float32)
         return np.concatenate((file_pointer["env"]["state"][:], pad), axis=-1)
 
-    elif sdim > target_sdim and (state_mismatch == STATE_MISMATCH.CLEAVE):
+    elif sdim > target_sdim and (state_mismatch & STATE_MISMATCH.CLEAVE):
         return file_pointer["env"]["state"][:][:, :target_sdim]
 
     else:
@@ -180,11 +180,11 @@ def load_actions(
                 action_append[t, 0] = low_val
         return np.concatenate((old_actions, action_append), axis=-1)
 
-    elif adim < target_adim and (action_mismatch == ACTION_MISMATCH.PAD_ZERO):
+    elif adim < target_adim and (action_mismatch & ACTION_MISMATCH.PAD_ZERO):
         pad = np.zeros((a_T, target_adim - adim), dtype=np.float32)
         return np.concatenate((file_pointer["policy"]["actions"][:], pad), axis=-1)
 
-    elif adim > target_adim and (action_mismatch == ACTION_MISMATCH.CLEAVE):
+    elif adim > target_adim and (action_mismatch & ACTION_MISMATCH.CLEAVE):
         return file_pointer["policy"]["actions"][:][:, :target_adim]
 
     else:
@@ -288,7 +288,7 @@ def load_data(f_name, file_metadata, hparams, rng=None):
             hf,
             file_metadata,
             hparams.target_adim,
-            hparams.target_mismatch,
+            hparams.action_mismatch,
             hparams.impute_autograsp_action,
         ).astype(np.float32)[start_time : start_time + n_states - 1]
 

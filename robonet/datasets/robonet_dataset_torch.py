@@ -193,7 +193,7 @@ class RoboNetDataset(BaseVideoDataset):
 
     def _get(self, key, mode):
         if mode == self.primary_mode:
-            return self._get_dict(*next(self.__iter__()))
+            return next(self.__iter__())
 
             # self._data_loader_dict[key]
 
@@ -381,11 +381,9 @@ class RoboNetDataset(BaseVideoDataset):
         else:
             images, actions, states = args
 
-        images = torch.tensor(images, dtype=torch.uint8)
-        actions = torch.tensor(actions, dtype=torch.float32)
-        states = torch.tensor(states, dtype=torch.float32)
-
-        pdb.set_trace()
+        images = torch.from_numpy(images)
+        actions = torch.from_numpy(actions)
+        states = torch.from_numpy(states)
 
         out_dict = {}
         height, width = self._hparams.img_size
@@ -405,16 +403,16 @@ class RoboNetDataset(BaseVideoDataset):
                 out_dict["images"], self._hparams.color_augmentation
             )
 
-        out_dict["actions"] = tf.reshape(
+        out_dict["actions"] = torch.reshape(
             actions,
             [self.batch_size, self._hparams.load_T - 1, self._hparams.target_adim],
         )
-        out_dict["states"] = tf.reshape(
+        out_dict["states"] = torch.reshape(
             states, [self.batch_size, self._hparams.load_T, self._hparams.target_sdim]
         )
 
         if self._hparams.load_annotations:
-            out_dict["annotations"] = tf.reshape(
+            out_dict["annotations"] = torch.reshape(
                 annotations,
                 [self._batch_size, self._hparams.load_T, ncam, height, width, 2],
             )
@@ -522,8 +520,8 @@ if __name__ == "__main__":
     # for batch in loader:
     #     pdb.set_trace()
     #     break
-
-    batch = ds.__getitem__(0)
+    pdb.set_trace()
+    batch = next(ds.__iter__())
 
     # tensors = [dataset[x, args.mode] for x in ["images", "states", "actions", "f_names"]]
     # s = tf.Session()
