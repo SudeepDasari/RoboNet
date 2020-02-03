@@ -375,12 +375,17 @@ class RoboNetDataset(BaseVideoDataset):
         shaped_images = images.view(
             self.batch_size, self._hparams.load_T, ncam, height, width, 3
         )
-
-        out_dict["images"] = shaped_images.to(torch.float32) / 255.0
+        out_dict["images"] = shaped_images.to(torch.float32)
         if self._hparams.color_augmentation:
-            out_dict["images"] = color_augment(
-                out_dict["images"], self._hparams.color_augmentation
+            out_dict["images"] = (
+                color_augment(
+                    out_dict["images"] / 255.0, self._hparams.color_augmentation
+                )
+                * 255.0
             )
+
+        if self._hparams.normalize_image_output:
+            out_dict["images"] = out_dict["images"] / 255.0
 
         out_dict["actions"] = torch.reshape(
             actions,
@@ -502,13 +507,12 @@ if __name__ == "__main__":
     #     continue
     # ----------------------------------------------------------------
 
+    _ = next(ds.__iter__())
     batch = next(ds.__iter__())
 
     imageio.mimsave(
-        "test_frames.gif",
-        (batch["images"].reshape(-1, *ds.hparams.img_size, 3) * 255.0)
-        .numpy()
-        .astype(np.uint8),
+        "test_frames2.gif",
+        (batch["images"].reshape(-1, *ds.hparams.img_size, 3)).numpy().astype(np.uint8),
     )
 
     print("Loaded tensors!")
