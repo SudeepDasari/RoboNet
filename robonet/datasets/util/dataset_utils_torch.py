@@ -1,7 +1,7 @@
 import torch
 import pdb
 import numpy as np
-import pytorch_colors as colors
+import robonet.datasets.util.color_space_utils as colors
 
 
 def color_augment(image, noise_range=0.2):
