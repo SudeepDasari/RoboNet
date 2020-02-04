@@ -17,6 +17,7 @@ if __name__ == '__main__':
     parser.add_argument('--local_mode', action='store_true', help="if flag enables local_mode")
     parser.add_argument('--cluster', action='store_true', help="if flag enables cluster mode")
     parser.add_argument('--resume', action='store_true', help="if flag provided resume from checkpoints rather than start from scratch")
+    parser.add_argument('--default_logger', action='store_true', help="use default logger if true")
     parser.add_argument('--temp_dir', type=str, default=None, help="sets temp dir for ray redis (useful if permission error in /tmp/)")
     parser.add_argument('--name', type=str, default=None, help="sets experiment name")
     parser.add_argument('--n_gpus', type=int, default=1, help="number of GPUs to train on")
@@ -43,11 +44,15 @@ if __name__ == '__main__':
     else:
         name = config.pop('name', "{}_training".format(os.getlogin()))
 
+    loggers = [GIFLogger]
+    if args.default_logger:
+        loggers = None
+    
     exp = tune.Experiment(
                 name=name,
                 run=get_trainable(config.pop('train_class')),
                 trial_name_creator=tune.function(trial_str_creator),
-                loggers=[GIFLogger],
+                loggers=loggers,
                 resources_per_trial= {"cpu": 1, "gpu": args.n_gpus},
                 checkpoint_freq=config.pop('save_freq', 5000),
                 upload_dir=config.pop('upload_dir', None),

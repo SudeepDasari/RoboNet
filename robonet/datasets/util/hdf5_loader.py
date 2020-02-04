@@ -32,6 +32,9 @@ def default_loader_hparams():
             'cams_to_load': [0],
             'impute_autograsp_action': True,
             'load_annotations': False,
+            'load_finger_sensors': False,
+            'load_reward': False,
+            'reward_discount': -1,
             'zero_if_missing_annotation': False, 
             'load_T': 0,                                # TODO implement error checking here for jagged reading
             }
@@ -160,9 +163,29 @@ def load_data(f_name, file_metadata, hparams, rng=None):
         assert all([0 <= i < file_metadata['ncam'] for i in hparams['cams_to_load']]), "cams_to_load out of bounds!"
         images = [load_camera_imgs(c, hf, file_metadata, hparams['img_size'], start_time, n_states)[None] for c in hparams['cams_to_load']]
         images = np.swapaxes(np.concatenate(images, 0), 0, 1)
+        images = np.transpose(images, (0, 1, 4, 2, 3))
         actions = load_actions(hf, file_metadata, hparams).astype(np.float32)[start_time:start_time + n_states-1]
-        states = load_states(hf, file_metadata, hparams).astype(np.float32)[start_time:start_time + n_states]
+        full_state = load_states(hf, file_metadata, hparams).astype(np.float32)
+        states = full_state[start_time:start_time + n_states]
 
+        if hparams['load_finger_sensors']:
+            finger_sensors = hf['env']['finger_sensors'][:][start_time:start_time + n_states].astype(np.float32).reshape((-1, 1))
+            states = np.concatenate((states, finger_sensors), -1)
+
+        if hparams['load_reward']:
+            assert 1 >= hparams['reward_discount'] >= 0, 'invalid reward discount'
+            finger_sensors = hf['env']['finger_sensors'][:].reshape((-1, 1))
+            good_states = np.logical_and(full_state[1:, 2] >= 0.9, full_state[1:, -1] > 0)
+            good_states = np.logical_and(finger_sensors[1:, 0] > 0, good_states).astype(np.float32)
+            reward_table = good_states - (1 - good_states) * 0.02
+            rewards = []
+
+            for s_t in range(start_time, start_time + n_states - 1):
+                reward_slice = reward_table[s_t:]
+                discount = np.power(hparams['reward_discount'], np.arange(reward_slice.shape[0]))
+                rewards.append(np.sum(discount * reward_slice))
+            return images, actions, states, np.array(rewards).astype(np.float32)
+    
         if hparams['load_annotations']:
             annotations = load_annotations(hf, file_metadata, hparams, hparams['cams_to_load'])[start_time:start_time + n_states]
             return images, actions, states, annotations
