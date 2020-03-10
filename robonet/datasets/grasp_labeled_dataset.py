@@ -1,5 +1,5 @@
 from robonet.datasets.util.hdf5_loader import HDF5Loader
-from robonet_dataset import RoboNetDataset
+from robonet.datasets.robonet_dataset import RoboNetDataset
 import numpy as np
 import random
 import torch
