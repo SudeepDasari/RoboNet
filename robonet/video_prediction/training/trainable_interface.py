@@ -66,7 +66,7 @@ class VPredTrainable(Trainable):
 
     def _get_dataset_class(self, class_name):
         return get_dataset_class(class_name)
-    
+
     def _get_model_class(self, class_name):
         return get_model(class_name)
 
@@ -86,15 +86,17 @@ class VPredTrainable(Trainable):
 
         if 'sequence_length' in model_hparams and 'load_T' not in dataset_hparams:
             dataset_hparams['load_T'] = model_hparams['sequence_length']
-        
+
         return dataset_hparams, model_hparams, hparams
 
     def _get_input_targets(self, DatasetClass, metadata, dataset_hparams):
         data_loader = DatasetClass(self._hparams.batch_size, metadata, dataset_hparams)
 
         tensor_names = ['actions', 'images', 'states']
+        if self._model_name == 'classifier':
+            tensor_names.append('finger_sensor')
         if 'annotations' in data_loader:
-            tensor_names = ['actions', 'images', 'states', 'annotations']
+            tensor_names.append('annotations')
 
         self._tensor_multiplexer = MultiplexedTensors(data_loader, tensor_names)
         loaded_tensors = [self._tensor_multiplexer[k] for k in tensor_names]
@@ -104,21 +106,21 @@ class VPredTrainable(Trainable):
         self._real_images = loaded_tensors[1] = loaded_tensors[1][:, :, 0]              # grab cam 0 for images
         if 'annotations' in data_loader:
             self._real_annotations = loaded_tensors[3] = loaded_tensors[3][:, :, 0]     # grab cam 0 for annotations
-        
+
         inputs, targets = {'actions': loaded_tensors[0]}, {}
         for k, v in zip(tensor_names[1:], loaded_tensors[1:]):
             inputs[k], targets[k] = v[:, :-1], v
 
         self._data_loader = data_loader
         return inputs, targets
-    
+
     def _make_dataloaders(self, config):
         DatasetClass = self._get_dataset_class(self.dataset_hparams.pop('dataset'))
         sources, self.dataset_hparams['source_selection_probabilities'] = self._init_sources()
-        
+
         inputs, targets = self._get_input_targets(DatasetClass, sources, self.dataset_hparams)
         return inputs, targets
-    
+
     def _default_source_hparams(self):
         return {
             'data_directory': './',
@@ -135,7 +137,7 @@ class VPredTrainable(Trainable):
             source_hparams.update(source)
             dir_path = os.path.realpath(os.path.expanduser(source_hparams['data_directory']))
             meta_data = loaded_metadata[dir_path] = loaded_metadata.get(dir_path, load_metadata(dir_path))
-            
+
             for k, v in source_hparams.items():
                 if k not in self._default_source_hparams():
                     if k == 'object_classes':
@@ -145,7 +147,7 @@ class VPredTrainable(Trainable):
                     else:
                         meta_data = meta_data[meta_data[k] == v]
                     assert len(meta_data), "filters created empty data source!"
-            
+
             if source_hparams['balance_by_attribute']:
                 meta_data = [meta_data]
                 for k in source_hparams['balance_by_attribute']:
@@ -154,13 +156,13 @@ class VPredTrainable(Trainable):
                         unique_elems = m[k].frame.unique().tolist()
                         new_data.extend([m[m[k] == u] for u in unique_elems])
                     meta_data = new_data
-                
+
                 if source_hparams['source_prob']:
                     new_prob = source_hparams['source_prob'] / float(len(meta_data))
                     source_hparams['source_prob'] = [new_prob for _ in range(len(meta_data))]
                 else:
                     source_hparams['source_prob'] = [None for _ in range(len(meta_data))]
-                
+
                 sources.extend(meta_data)
                 source_probs.extend(source_hparams['source_prob'])
             else:
@@ -182,7 +184,7 @@ class VPredTrainable(Trainable):
 
     def _train(self):
         itr = self.iteration
-        
+
         # no need to increment itr since global step is incremented by train_op
         loss, train_op = self._estimator.loss, self._estimator.train_op
         fetches = {'global_step': itr}
@@ -207,7 +209,7 @@ class VPredTrainable(Trainable):
                 img_summary_get_ops['pred_targets'] = self._tensor_metrics['pred_targets']
                 img_summary_get_ops['pred_target_dists'] = self._tensor_metrics['pred_target_dists']
                 img_summary_get_ops['inference_images'] = self._tensor_metrics['inference_images']
-            
+
             for name in ['train', 'val'] + self.annotation_modes:
                 fetch_mode = self._tensor_multiplexer.get_feed_dict(name)
                 fetched_npy = self.sess.run(img_summary_get_ops, feed_dict=fetch_mode)
@@ -249,7 +251,7 @@ class VPredTrainable(Trainable):
                     fetches['metric/{}/{}'.format(key, name)] = value
 
         fetches['done'] = itr >= self._hparams.max_steps
-        
+
         self._tf_log(fetches)
 
         return fetches
@@ -265,7 +267,7 @@ class VPredTrainable(Trainable):
             yaml.dump({'model': model_params, 'dataset': dataset_params}, f)
         with open(os.path.join(checkpoint_dir, 'config.yaml'), 'w') as f:
             yaml.dump(self._base_config, f)
-        
+
         return self.saver.save(self.sess, os.path.join(checkpoint_dir, 'model'), global_step=self.iteration) + '.meta'
 
     def _restore(self, checkpoints):
@@ -292,7 +294,7 @@ class VPredTrainable(Trainable):
             event_dir = self._hparams.restore_dir.split('/checkpoint')[0]
             event_file = glob.glob('{}/events.out.*'.format(event_dir))
             if event_file:
-                event_file = event_file[0] 
+                event_file = event_file[0]
                 new_path = '{}/{}'.format(self.logdir,event_file.split('/')[-1])
 
                 if os.path.isfile(event_file):
@@ -306,13 +308,13 @@ class VPredTrainable(Trainable):
 
         if self._file_writer is None:
             self._file_writer = tf.summary.FileWriter(self.logdir)
-        
+
         global_step = result['global_step']
 
         for k, v in result.items():
             if 'metric/' not in k:
                 continue
-            
+
             tag = '/'.join(k.split('/')[1:])
             summary = tf.Summary()
             if isinstance(v, np.ndarray):

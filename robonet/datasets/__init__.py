@@ -17,5 +17,7 @@ def get_dataset_class(name):
     elif name == 'TPU' or name == 'TFRecords':
         from .record_dataset import TFRecordVideoDataset
         return TFRecordVideoDataset
+    elif name == 'robonet_sawyer' or name == 'sawyer':
+        from .robonet_sawyer_dataset import SawyerDataset
     else:
         raise NotImplementedError
