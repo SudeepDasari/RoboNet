@@ -16,17 +16,15 @@ import shutil
 from robonet.video_prediction.utils.encode_img import construct_image_tile
 from robonet.video_prediction.utils.ffmpeg_gif import encode_gif
 import copy
-
+from .trainable_interface import VPredTrainable
 
 class VPredTrainableClassifier(VPredTrainable):
 
     def _get_input_targets(self, DatasetClass, metadata, dataset_hparams):
         data_loader = DatasetClass(self._hparams.batch_size, metadata, dataset_hparams)
 
-        tensor_names = ['actions', 'images', 'states']
+        tensor_names = ['actions', 'images', 'states', 'finger_sensor']
 
-        if self._model_name == 'classifier':
-            tensor_names.append('finger_sensor')
         if 'annotations' in data_loader:
             tensor_names.append('annotations')
 

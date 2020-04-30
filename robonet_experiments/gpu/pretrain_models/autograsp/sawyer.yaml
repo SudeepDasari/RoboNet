@@ -1,5 +1,5 @@
 batch_size: 8
-train_class: VPredTrainable
+train_class: VPredTrainableClassifier
 max_steps: 500000
 train_fraction: 0.9
 save_freq: 5000
@@ -19,7 +19,7 @@ loader_hparams:
 
 # model_hparams used to create graph and loss function
 model_hparams:
-  model: deterministic
+  model: classifier
   graph_type: vgg_conv
   lr: 0.0001
   context_frames: 5

@@ -17,4 +17,7 @@ def get_trainable(class_name):
     if class_name == 'BatchmixFinetuning':
         from .finetuning_trainable_interface import BatchmixingVPredTrainable
         return BatchmixingVPredTrainable
+    if class_name == 'VPredTrainableClassifier':
+        from .trainable_interface_classifier import VPredTrainableClassifier
+        return VPredTrainableClassifier
     raise NotImplementedError
