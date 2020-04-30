@@ -19,7 +19,7 @@ def _load_data(inputs):
     raise ValueError
 
 
-class SawyerDataset(BaseVideoDataset):
+class RoboNetSawyerDataset(BaseVideoDataset):
     def __init__(self, batch_size, dataset_files_or_metadata, hparams=dict()):
         source_probs = hparams.pop('source_selection_probabilities', None)
         super(RoboNetDataset, self).__init__(batch_size, dataset_files_or_metadata, hparams)

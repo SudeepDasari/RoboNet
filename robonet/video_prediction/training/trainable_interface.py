@@ -93,6 +93,9 @@ class VPredTrainable(Trainable):
         data_loader = DatasetClass(self._hparams.batch_size, metadata, dataset_hparams)
 
         tensor_names = ['actions', 'images', 'states']
+
+        if self._model_name == 'classifier':
+            tensor_names.append('finger_sensor')
         if 'annotations' in data_loader:
             tensor_names.append('annotations')
 
