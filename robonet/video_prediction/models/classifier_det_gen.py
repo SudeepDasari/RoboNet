@@ -10,6 +10,8 @@ from robonet.video_prediction import metrics
 from robonet.video_prediction.models.deterministc_embedding_utils import onestep_encoder_fn, average_and_repeat, split_model_inference
 import logging
 from grasp_classifier.grasp_check.load_grasp_classifier import grasp_classifier
+import os
+import pdb
 
 def host_summary_fn(summary_dir, summary_queue_len, image_summary_freq, **summary_dict):
     gs = summary_dict.pop('global_step')[0]               # the 0 index here is crucial, will error on TPU otherwise
@@ -52,7 +54,7 @@ class ClassifierModel(BaseModel):
         # prep inputs here
         logger = logging.getLogger(__name__)
         inputs, targets = {}, {}
-        inputs['finger_sensors'], inputs['actions'], inputs['images'] = tf.transpose(model_inputs['actions'], [1, 0, 2]), tf.transpose(model_inputs['images'], [1, 0, 2, 3, 4]), tf.transpose(model_inputs['finger_sensor'], [1, 0, 2, 3, 4])
+        inputs['actions'], inputs['images'], inputs['finger_sensor'] = tf.transpose(model_inputs['actions'], [1, 0, 2]), tf.transpose(model_inputs['images'], [1, 0, 2, 3, 4]), tf.transpose(model_inputs['finger_sensor'], [1, 0, 2])
         if mode == tf.estimator.ModeKeys.TRAIN:
             targets['images'] = tf.transpose(model_targets['images'][:, self._hparams.context_frames:], [1, 0, 2, 3, 4])
 
@@ -93,15 +95,23 @@ class ClassifierModel(BaseModel):
 
         # load classifier and get scores
         classifier = grasp_classifier()
-        classifier.load_model('classifier_model/grasp_no_lift.h5')
-        scores = []
-        for frame in pred_frames:
-            scores.append(classifier(frame))
+        #pdb.set_trace()
+        classifier.load_model('/home/thomasdevlin/robonet-cost/grasp_classifier/grasp_check/classifier_model/grasp_no_lift_model.h5')
+        batches = []
+        shape = pred_frames.get_shape().as_list()
+        scores = np.empty((shape[0],shape[1]))
+        import numpy as np
+        pdb.set_trace()
+        for i in range(shape[0]):
+            batches.append(tf.get_static_value(pred_frames[i]))
+            for k in range(shape[1]):
+                scores[i][k] = classifier(batches[i][k])
         # get labels
         labels = inputs['finger_sensors'].astype(np.float32)
+        labels = [labels > 0 for label in labels]
         #get classifier loss
         classifier_loss = abs(np.subtract(scores, labels))
-        gen_losses["c_loss"] = (classifier_loss, self._hparams.c_weight)
+        #gen_losses["c_loss"] = (classifier_loss, self._hparams.c_weight)
 
         # if train build the loss function (don't support multi-gpu training)
         if mode == tf.estimator.ModeKeys.TRAIN:
@@ -115,6 +125,9 @@ class ClassifierModel(BaseModel):
 
 
             gen_losses = OrderedDict()
+            
+            gen_losses["c_loss"] = (classifier_loss, self._hparams.c_weight)
+            
             if not (self._hparams.l1_weight or self._hparams.l2_weight or self._hparams.vgg_cdist_weight):
                 logger.error('no image loss is being created!')
                 raise ValueError
@@ -202,7 +215,7 @@ class ClassifierModel(BaseModel):
             g_train_op = optimizer.apply_gradients(g_gradvars, global_step=global_step)
 
             if self._tpu_mode:
-                import numpy as np
+                #import numpy as np
                 try:
                     parameter_count = np.sum([np.prod(v.get_shape().as_list()) for v in tf.trainable_variables()])
                     print("parameter_count =", parameter_count)
