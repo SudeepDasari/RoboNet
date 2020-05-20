@@ -95,23 +95,16 @@ class ClassifierModel(BaseModel):
 
         # load classifier and get scores
         classifier = grasp_classifier()
-        #pdb.set_trace()
         classifier.load_model('/home/thomasdevlin/robonet-cost/grasp_classifier/grasp_check/classifier_model/grasp_no_lift_model.h5')
-        batches = []
-        shape = pred_frames.get_shape().as_list()
+        shape = outputs['gen_images'].get_shape().as_list()
         scores = np.empty((shape[0],shape[1]))
-        import numpy as np
-        pdb.set_trace()
         for i in range(shape[0]):
-            batches.append(tf.get_static_value(pred_frames[i]))
-            for k in range(shape[1]):
-                scores[i][k] = classifier(batches[i][k])
+            scores[i] = classifier(outputs['gen_images'][i])
         # get labels
         labels = inputs['finger_sensors'].astype(np.float32)
         labels = [labels > 0 for label in labels]
         #get classifier loss
-        classifier_loss = abs(np.subtract(scores, labels))
-        #gen_losses["c_loss"] = (classifier_loss, self._hparams.c_weight)
+        bce = tf.keras.losses.BinaryCrossentropy()
 
         # if train build the loss function (don't support multi-gpu training)
         if mode == tf.estimator.ModeKeys.TRAIN:
@@ -125,9 +118,10 @@ class ClassifierModel(BaseModel):
 
 
             gen_losses = OrderedDict()
-            
-            gen_losses["c_loss"] = (classifier_loss, self._hparams.c_weight)
-            
+
+            #assign classifier loss
+            gen_losses["c_loss"] = (bce(scores, labels), self._hparams.c_weight)
+
             if not (self._hparams.l1_weight or self._hparams.l2_weight or self._hparams.vgg_cdist_weight):
                 logger.error('no image loss is being created!')
                 raise ValueError
