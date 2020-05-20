@@ -99,11 +99,11 @@ class ClassifierModel(BaseModel):
         classifier.load_model('/home/thomasdevlin/robonet-cost/grasp_classifier/grasp_check/classifier_model/grasp_no_lift_model.h5')
         batches = []
         shape = pred_frames.get_shape().as_list()
-        scores = np.empty((shape[0],shape[1]))
         import numpy as np
+        scores = np.empty((shape[0],shape[1]), "float")
+        batches = tf.get_static_value(pred_frames)
         pdb.set_trace()
         for i in range(shape[0]):
-            batches.append(tf.get_static_value(pred_frames[i]))
             for k in range(shape[1]):
                 scores[i][k] = classifier(batches[i][k])
         # get labels
