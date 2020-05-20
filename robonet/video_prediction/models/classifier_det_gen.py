@@ -12,6 +12,7 @@ import logging
 from grasp_classifier.grasp_check.load_grasp_classifier import grasp_classifier
 import os
 import pdb
+import numpy as np
 
 def host_summary_fn(summary_dir, summary_queue_len, image_summary_freq, **summary_dict):
     gs = summary_dict.pop('global_step')[0]               # the 0 index here is crucial, will error on TPU otherwise
@@ -99,7 +100,7 @@ class ClassifierModel(BaseModel):
         shape = outputs['gen_images'].get_shape().as_list()
         scores = np.empty((shape[0],shape[1]))
         for i in range(shape[0]):
-            scores[i] = classifier(outputs['gen_images'][i])
+            scores[i] = classifier(outputs['gen_images'][i], steps = shape[1])
         # get labels
         labels = inputs['finger_sensors'].astype(np.float32)
         labels = [labels > 0 for label in labels]
