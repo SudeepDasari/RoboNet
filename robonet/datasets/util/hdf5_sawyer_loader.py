@@ -75,10 +75,9 @@ def load_camera_imgs(cam_index, file_pointer, file_metadata, target_dims, start_
     raise NotImplementedError
 
 def load_finger_sensor(file_pointer, meta_data, hparams):
-    with h5py.File(file_pointer, 'r') as hf:
+    with file_pointer as hf:
         finger_sensor = hf['env']['finger_sensors'][:]
         finger_sensor = finger_sensor.reshape((finger_sensor.shape[0], -1))
-    print(finger_sensor)
     return finger_sensor
 
 def load_states(file_pointer, meta_data, hparams):

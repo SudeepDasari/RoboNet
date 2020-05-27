@@ -144,7 +144,7 @@ class VGGConvGraph(BaseGraph):
                         attention_enc = tf.reduce_sum(attention_weights[:, :, None] * tf.concat([p[:, None] for p in previous_encs], 1), 1)
                         attention_enc = tf.reshape(attention_enc, [B, int(H // 8), int(W // 8), hparams.lstm_filters])
                     attention_enc = _cast_up(attention_enc)
-
+                   # import pdb; pdb.set_trace()
                     # decoder lstm cell
                     if t == 0:
                         dec_lstm_state = self._dec_lstm.get_initial_state(attention_enc[:, None])

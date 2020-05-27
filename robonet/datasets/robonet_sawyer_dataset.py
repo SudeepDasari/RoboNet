@@ -7,7 +7,7 @@ import tensorflow as tf
 import copy
 import multiprocessing
 import pdb
-
+from .robonet_dataset import RoboNetDataset
 
 def _load_data(inputs):
     if len(inputs) == 3:
@@ -19,7 +19,7 @@ def _load_data(inputs):
     raise ValueError
 
 
-class RoboNetSawyerDataset(BaseVideoDataset):
+class RoboNetSawyerDataset(RoboNetDataset):
     def __init__(self, batch_size, dataset_files_or_metadata, hparams=dict()):
         source_probs = hparams.pop('source_selection_probabilities', None)
         super(RoboNetDataset, self).__init__(batch_size, dataset_files_or_metadata, hparams)
@@ -221,13 +221,13 @@ class RoboNetSawyerDataset(BaseVideoDataset):
 
     def _get_dict(self, *args):
         if self._hparams.ret_fnames and self._hparams.load_annotations:
-            images, actions, states, annotations, f_names = args
+            images, actions, states, finger, annotations, f_names = args
         elif self._hparams.ret_fnames:
-            images, actions, states, f_names = args
+            images, actions, states, finger, f_names = args
         elif self._hparams.load_annotations:
-            images, actions, states, annotations = args
+            images, actions, states, finger, annotations = args
         else:
-            images, actions, states = args
+            images, actions, states, finger = args
 
         out_dict = {}
         height, width = self._hparams.img_size
@@ -246,6 +246,7 @@ class RoboNetSawyerDataset(BaseVideoDataset):
 
         out_dict['actions'] = tf.reshape(actions, [self.batch_size, self._hparams.load_T - 1, self._hparams.target_adim])
         out_dict['states'] = tf.reshape(states, [self.batch_size, self._hparams.load_T, self._hparams.target_sdim])
+        out_dict['finger_sensor'] = tf.reshape(finger, [self.batch_size, self._hparams.load_T, 1])
 
         if self._hparams.load_annotations:
             out_dict['annotations'] = tf.reshape(annotations, [self._batch_size, self._hparams.load_T, ncam, height, width, 2])
@@ -267,10 +268,12 @@ class RoboNetSawyerDataset(BaseVideoDataset):
         self._img_tensor = tf.cast(img_pl, tf.float32) / 255.0
         if self._hparams.color_augmentation:
             self._img_tensor = color_augment(self._img_tensor, self._hparams.color_augmentation)
-
+        
+        
         pl_dict['images'] = img_pl
         pl_dict['actions'] = tf.placeholder(tf.float32, shape=[self.batch_size, self._hparams.load_T - 1, self._hparams.target_adim])
         pl_dict['states'] = tf.placeholder(tf.float32, [self.batch_size, self._hparams.load_T, self._hparams.target_sdim])
+        pl_dict['finger_sensor'] = tf.placeholder(tf.float32, [self.batch_size, self._hparams.load_T, 1])
 
         if self._hparams.load_annotations:
             pl_dict['annotations'] = tf.placeholder(tf.float32, [self._batch_size, self._hparams.load_T, ncam, height, width, 2])
@@ -288,6 +291,7 @@ class RoboNetSawyerDataset(BaseVideoDataset):
             images = np.zeros(self._place_holder_dict['images'].get_shape().as_list(), dtype=np.uint8)
             actions = np.zeros(self._place_holder_dict['actions'].get_shape().as_list(), dtype=np.float32)
             states = np.zeros(self._place_holder_dict['states'].get_shape().as_list(), dtype=np.float32)
+            finger_sensor = np.zeros(self._place_holder_dict['finger_sensor'].get_shape().as_list(), dtype=np.float32)
             if self._hparams.load_annotations:
                 annotations = np.zeros(self._place_holder_dict['annotations'].get_shape().as_list(), dtype=np.float32)
             if self._hparams.ret_fnames:
@@ -295,17 +299,18 @@ class RoboNetSawyerDataset(BaseVideoDataset):
         else:
             args = next(self._mode_generators[mode])
             if self._hparams.ret_fnames and self._hparams.load_annotations:
-                images, actions, states, annotations, f_names = args
+                images, actions, states, finger_sensor, annotations, f_names = args
             elif self._hparams.ret_fnames:
-                images, actions, states, f_names = args
+                images, actions, states, finger_sensor, f_names = args
             elif self._hparams.load_annotations:
-                images, actions, states, annotations = args
+                images, actions, states, finger_sensor, annotations = args
             else:
-                images, actions, states = args
+                images, actions, states, finger_sensor = args
 
         fetch[self._place_holder_dict['images']] = images
         fetch[self._place_holder_dict['actions']] = actions
         fetch[self._place_holder_dict['states']] = states
+        fetch[self._place_holder_dict['finger_sensor']] = finger_sensor
         if self._hparams.ret_fnames:
             fetch[self._place_holder_dict['f_names']] = f_names
         if self._hparams.load_annotations:

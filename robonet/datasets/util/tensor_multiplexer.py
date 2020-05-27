@@ -46,6 +46,8 @@ class MultiplexedTensors:
     
     def get_feed_dict(self, mode):
         dataset_feed = self._dataset.build_feed_dict(mode)
+        #print("******************************************************************")
+        #print(mode)
         if isinstance(mode, int):
             assert 0 <= mode < len(self._mode_ind.keys()), "mode_index must be in range 0 to len(modes) - 1"
             dataset_feed[self._train_cond] = mode

@@ -117,7 +117,7 @@ class VPredTrainableClassifier(Trainable):
     def _make_dataloaders(self, config):
         DatasetClass = self._get_dataset_class(self.dataset_hparams.pop('dataset'))
         sources, self.dataset_hparams['source_selection_probabilities'] = self._init_sources()
-
+        
         inputs, targets = self._get_input_targets(DatasetClass, sources, self.dataset_hparams)
         return inputs, targets
 
@@ -190,6 +190,7 @@ class VPredTrainableClassifier(Trainable):
         fetches = {'global_step': itr}
 
         start = time.time()
+       # import pdb; pdb.set_trace()
         train_loss = self.sess.run([loss, train_op], feed_dict=self._tensor_multiplexer.get_feed_dict('train'))[0]
         fetches['metric/step_time'] = time.time() - start
        # import pdb; pdb.set_trace()
@@ -234,7 +235,7 @@ class VPredTrainableClassifier(Trainable):
                         fetches['metric/image_summary/{}'.format(name)] = pad_and_concat(stbmajor(fetched_npy['pred_targets']), fetched_npy['pred_frames'], self._hparams.pad_amount)
                     else:  # used for everything else:
                         fetches['metric/image_summary/{}'.format(name)] = pad_and_concat(fetched_npy['real_images'], fetched_npy['pred_frames'], self._hparams.pad_amount)
-
+       # import pdb; pdb.set_trace()
         if itr % self._hparams.scalar_summary_freq == 0:
             fetches['metric/loss/train'] = train_loss
             fetches['metric/loss/val'] = self.sess.run(loss, feed_dict=self._tensor_multiplexer.get_feed_dict('val'))

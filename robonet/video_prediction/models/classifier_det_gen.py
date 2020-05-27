@@ -50,7 +50,7 @@ class ClassifierModel(BaseModel):
             'tv_weight': 0.0,
             "tpu_log_pad": 5
         }
-
+    
     def _model_fn(self, model_inputs, model_targets, mode):
         # prep inputs here
         logger = logging.getLogger(__name__)
@@ -95,17 +95,20 @@ class ClassifierModel(BaseModel):
         pred_frames = tf.transpose(outputs["gen_images"], [1,0,2,3,4])
 
         # load classifier and get scores
-        classifier = grasp_classifier()
-        classifier.load_model('/home/thomasdevlin/robonet-cost/grasp_classifier/grasp_check/classifier_model/grasp_no_lift_model.h5')
-        shape = outputs['gen_images'].get_shape().as_list()
-        scores = np.empty((shape[0],shape[1]))
-        for i in range(shape[0]):
-            scores[i] = classifier(outputs['gen_images'][i], steps = shape[1])
+        with tf.variable_scope('classifier'):
+            classifier = grasp_classifier()
+            classifier.load_model('/home/thomasdevlin/robonet-cost/grasp_classifier/grasp_check/classifier_model/grasp_no_lift_model.h5')
+            shape = pred_frames.get_shape().as_list()
+            scores = np.empty((1, shape[1], 1), dtype=np.float32)
+            for i in range(shape[0]):
+                scores = tf.concat([scores, tf.expand_dims(classifier(pred_frames[i]), 0)], 0)
+            scores = scores[1:]
         # get labels
-        labels = inputs['finger_sensors'].astype(np.float32)
-        labels = [labels > 0 for label in labels]
+        labels = model_inputs['finger_sensor'][:, -10:, :]
+        labels = tf.round(labels)
         #get classifier loss
         bce = tf.keras.losses.BinaryCrossentropy()
+        #bce calculated below
 
         # if train build the loss function (don't support multi-gpu training)
         if mode == tf.estimator.ModeKeys.TRAIN:
@@ -121,7 +124,8 @@ class ClassifierModel(BaseModel):
             gen_losses = OrderedDict()
 
             #assign classifier loss
-            gen_losses["c_loss"] = (bce(scores, labels), self._hparams.c_weight)
+            c_loss = bce(scores, labels)
+            gen_losses["c_loss"] = (c_loss, self._hparams.c_weight)
 
             if not (self._hparams.l1_weight or self._hparams.l2_weight or self._hparams.vgg_cdist_weight):
                 logger.error('no image loss is being created!')
@@ -132,6 +136,8 @@ class ClassifierModel(BaseModel):
 
             scalar_summaries = {'learning_rate': lr}
             tensor_summaries = {'pred_frames': pred_frames}
+
+            scalar_summaries["c_loss"] = c_loss
 
             if 'encoder' in self._hparams and self._hparams.encoder == 'one_step':
                 tensor_summaries['inference_images'] = inputs_tr_inf['inference']['images']
@@ -204,7 +210,7 @@ class ClassifierModel(BaseModel):
                 scalar_summaries['tv_loss'] = gen_tv_loss
 
             loss = sum(loss * weight for loss, weight in gen_losses.values()) #LOSS CALCULATION
-
+            
             print('computing gradient and train_op')
             g_gradvars = optimizer.compute_gradients(loss, var_list=model_graph.vars, colocate_gradients_with_ops=True)
             g_train_op = optimizer.apply_gradients(g_gradvars, global_step=global_step)
