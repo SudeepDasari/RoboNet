@@ -85,8 +85,8 @@ def load_metadata_dict(fname):
     if not os.path.exists(fname) or not os.path.isfile(fname):
         raise IOError("can't find {}".format(fname))
     buf = open(fname, 'rb').read()
-
-    with h5py.File(io.BytesIO(buf)) as hf:
+    # with h5py.File(io.BytesIO(buf)) as hf:
+    with h5py.File(fname, 'r') as hf:
         meta_data_dict = {'file_version': hf['file_version'][()]}
 
         meta_data_dict['sha256'] = hashlib.sha256(buf).hexdigest()
@@ -153,8 +153,12 @@ def get_metadata_frame(files):
     else:
         raise ValueError("Must be path to files or list/tuple of filenames")
 
-    with Pool(cpu_count()) as p:
-        meta_data = list(tqdm(p.imap(load_metadata_dict, files), total=len(files)))
+    parallel = True
+    if not parallel:
+        meta_data = [load_metadata_dict(f) for f in files]
+    else:
+        with Pool(cpu_count()) as p:
+            meta_data = list(tqdm(p.imap(load_metadata_dict, files), total=len(files)))
     
     data_frame = pd.DataFrame(meta_data, index=[f.split('/')[-1] for f in files])
     if base_path:

@@ -30,7 +30,9 @@ class HDF5Loader:
         with open(f_name, 'rb') as f:
             buf = f.read()
         assert hashlib.sha256(buf).hexdigest() == file_metadata['sha256'], "file hash doesn't match meta-data. maybe delete meta-data and re-generate?"
-        self._hf = h5py.File(io.BytesIO(buf), 'r')
+        # self._hf = h5py.File(io.BytesIO(buf), 'r')
+        self._hf = h5py.File(f_name, 'r')
+
         # start_time, n_states = 0, min([file_metadata['state_T'], file_metadata['img_T'], file_metadata['action_T'] + 1])
         # assert n_states > 1, "must be more than one state in loaded tensor!"
         # if 1 < hparams['load_T'] < n_states:
@@ -134,6 +136,10 @@ class HDF5Loader:
 
         else:
             raise ValueError("file adim - {}, target adim - {}, pad behavior - {}".format(adim, self._hparams['target_adim'], self._hparams['action_mismatch']))
+
+    def load_robot_id(self, robotname_list):
+        robotname2id = {n: i for i, n in enumerate(robotname_list)}
+        return robotname2id[self._file_metadata['robot']]
 
     def close(self):
         self._hf.close()
