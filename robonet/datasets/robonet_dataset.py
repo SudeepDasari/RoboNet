@@ -80,7 +80,10 @@ class RoboNetDataset(Dataset):
     
     def _proc_images(self, images):
         # cast and normalize images (if set)
-        images = np.transpose(images, (0, 3, 1, 2)).astype(np.float32) / 255
+        if len(images.shape) == 4:
+            images = np.transpose(images, (0, 3, 1, 2)).astype(np.float32) / 255
+        if len(images.shape) == 5:
+            images = np.transpose(images, (0, 1, 4, 2, 3)).astype(np.float32) / 255
         if self._hparams['normalize_images']:
             images -= self._mean
             images /= self._std
