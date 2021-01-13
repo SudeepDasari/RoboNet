@@ -32,6 +32,7 @@ class HDF5Loader:
         assert hashlib.sha256(buf).hexdigest() == file_metadata['sha256'], "file hash doesn't match meta-data. maybe delete meta-data and re-generate?"
         # self._hf = h5py.File(io.BytesIO(buf), 'r')
         self._hf = h5py.File(f_name, 'r')
+        
 
         # start_time, n_states = 0, min([file_metadata['state_T'], file_metadata['img_T'], file_metadata['action_T'] + 1])
         # assert n_states > 1, "must be more than one state in loaded tensor!"

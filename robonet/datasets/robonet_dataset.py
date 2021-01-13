@@ -9,8 +9,8 @@ import random
 
 class RoboNetDataset(Dataset):
     def __init__(self, metadata_sources, mode='train', hparams=dict()):
-        self._hparams = self._get_default_hparams()
-        self._hparams.update(hparams)
+        self._hp = self._get_default_hparams()
+        self._hp.update(hparams)
         
         if isinstance(metadata_sources, (list, tuple)):
             sources = metadata_sources
@@ -21,10 +21,12 @@ class RoboNetDataset(Dataset):
         self._data = []
         for i, source in enumerate(sources):
             file_shuffle = random.Random(5011757766786901527)
-            if self._hparams['train_ex_per_source'] is not None:
-                source_files = split_train_val_test(source, train_ex=self._hparams['train_ex_per_source'][i], rng=file_shuffle)[mode]
+            if self._hp['splits'] is None: # if there are separate folder for train val test
+                source_files = source.get_shuffled_files(file_shuffle)
+            elif self._hp['train_ex_per_source'] is not None:
+                source_files = split_train_val_test(source, train_ex=self._hp['train_ex_per_source'][i], rng=file_shuffle)[mode]
             else:
-                source_files = split_train_val_test(source, splits=self._hparams['splits'], rng=file_shuffle)[mode]
+                source_files = split_train_val_test(source, splits=self._hp['splits'], rng=file_shuffle)[mode]
             self._data.extend([(f, source.get_file_metadata(f)) for f in source_files])
         
         # constants for normalization
@@ -32,13 +34,13 @@ class RoboNetDataset(Dataset):
         self._std = np.array([0.229, 0.224, 0.225], dtype=np.float32).reshape((1, -1, 1, 1))
     
     def _check_params(self, sources):
-        assert self._hparams['T'] >= 0, "can't load less than 0 frames!"
+        assert self._hp['T'] >= 0, "can't load less than 0 frames!"
         # smallest max step length of all dataset sources 
         min_steps = min([min(min(m.frame['img_T']), min(m.frame['state_T'])) for m in sources])
-        if not self._hparams['T']:
-            self._hparams['T'] = min_steps
+        if not self._hp['T']:
+            self._hp['T'] = min_steps
         else:
-            assert self._hparams['T'] <= min_steps, "ask to load {} steps but some records only have {}!".format(self._hparams['T'], min_steps)
+            assert self._hp['T'] <= min_steps, "ask to load {} steps but some records only have {}!".format(self._hp['T'], min_steps)
 
     @staticmethod
     def _get_default_hparams():
@@ -59,19 +61,19 @@ class RoboNetDataset(Dataset):
             idx = idx.tolist()
         
         file_name, metadata = self._data[idx]
-        loader = HDF5Loader(file_name, metadata, self._hparams)
+        loader = HDF5Loader(file_name, metadata, self._hp)
         # get action/state vectors
         states, actions = loader.load_states(), loader.load_actions()
 
         # get camera and slice states if T is set
         random_camera = random.randint(0, metadata['ncam'] - 1)
-        if self._hparams['T']:
+        if self._hp['T']:
             img_len = metadata['img_T']
-            start_time = random.randint(0, img_len - self._hparams['T'])
+            start_time = random.randint(0, img_len - self._hp['T'])
 
-            images = loader.load_video(random_camera, start_time=start_time, n_load=self._hparams['T'])
-            states = states[start_time:start_time + self._hparams['T']]
-            actions = actions[start_time:start_time + self._hparams['T'] - 1]
+            images = loader.load_video(random_camera, start_time=start_time, n_load=self._hp['T'])
+            states = states[start_time:start_time + self._hp['T']]
+            actions = actions[start_time:start_time + self._hp['T'] - 1]
         else:
             images = loader.load_video(random_camera)
         images = self._proc_images(images)
@@ -84,7 +86,7 @@ class RoboNetDataset(Dataset):
             images = np.transpose(images, (0, 3, 1, 2)).astype(np.float32) / 255
         if len(images.shape) == 5:
             images = np.transpose(images, (0, 1, 4, 2, 3)).astype(np.float32) / 255
-        if self._hparams['normalize_images']:
+        if self._hp['normalize_images']:
             images -= self._mean
             images /= self._std
         return images
@@ -126,8 +128,9 @@ if __name__ == '__main__':
     metadata = load_metadata(args.path)
     hparams = {'T': args.load_steps, 'action_mismatch': 3, 'state_mismatch': 3, 'splits':[0.8, 0.1, 0.1], 'normalize_images':False}
     dataset = RoboNetDataset(metadata, args.mode, hparams)
-    loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=16)
-    
+    # loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=16)
+    loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
+
     if args.time_test:
         _timing_test(args.time_test, loader)
         exit(0)

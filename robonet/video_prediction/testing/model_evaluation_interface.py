@@ -12,7 +12,7 @@ import glob
 
 
 class VPredEvaluation(object):
-    def __init__(self, model_path, test_hparams={}, n_gpus=1, first_gpu=0, sess=None):
+    def __init__(self, model_path, test_hparams={}, n_gpus=1, first_gpu=0, sess=None, model_params_override=None):
         assert first_gpu == 0, "only starts building at gpu0"
         
         self._test_hparams = self._default_hparams().override_from_dict(test_hparams)
@@ -25,6 +25,8 @@ class VPredEvaluation(object):
             params = yaml.load(config, Loader=yaml.SafeLoader)
             self._model_hparams = params['model']
             self._input_hparams = params['dataset']
+        if model_params_override is not None:
+            self._model_hparams.update(model_params_override)
 
         print('\n\n------------------------------------ LOADED PARAMS ------------------------------------')
         for k, v in self._model_hparams.items():
@@ -99,7 +101,10 @@ class VPredEvaluation(object):
             assert context_tensors['context_frames'].shape[2] == 1, "only one camera supported!"
             context_images = context_tensors['context_frames'][:, -self._model_hparams['context_frames']:, 0]
             context_actions = context_tensors['context_actions'][:, (1 - self._model_hparams['context_frames']):]
-            context_states = context_tensors['context_states'][:, -self._model_hparams['context_frames']:]
+            if 'context_states' in context_tensors:
+                context_states = context_tensors['context_states'][:, -self._model_hparams['context_frames']:]
+            else:
+                context_states = None
         
         if self._test_hparams.designated_pixel_count and self._test_hparams.tile_context:
             context_distributions = context_tensors['context_pixel_distributions'][-self._model_hparams['context_frames']:, 0][None]
@@ -138,9 +143,10 @@ class VPredEvaluation(object):
             context_images = context_images.astype(np.float32) / 255
         
         feed_dict = {self._images_pl: context_images,
-                        self._states_pl: context_states, 
-                        self._context_actions_pl: context_actions, 
+                        self._context_actions_pl: context_actions,
                         self._actions_pl: input_actions}
+        if context_states is not None:
+            feed_dict[self._states_pl] = context_states
 
         if self._test_hparams.designated_pixel_count and context_distributions is None:
             height, width = self._input_hparams['img_size']
@@ -159,12 +165,17 @@ class VPredEvaluation(object):
     def set_session(self, sess):
         self._sess = sess
 
-    def restore(self):
+    def restore(self, gpu_mem_limit=False):
         if self._restored:
             return
 
         if self._sess is None:
-            self._sess = tf.Session()
+            if gpu_mem_limit:
+                gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.3)
+                self._sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
+            else:
+                self._sess = tf.Session()
+
             self._sess.run(tf.global_variables_initializer())
         
         model_paths = glob.glob('{}/model*'.format(self._model_path))

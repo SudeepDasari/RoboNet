@@ -36,7 +36,7 @@ class BaseModel(object):
         for k in list(params.keys()):
             if k not in default_hparams:
                 params.pop(k)
-                print('key {} specified but is not in hparams!')
+                print('key {} specified but is not in hparams!'.format(k))
 
         self._hparams = HParams(**default_hparams).override_from_dict(params)
         self._hparams.use_tpu = self._use_tpu
