@@ -71,6 +71,10 @@ class HDF5Loader:
         if encoding == 'mp4':
             buf = io.BytesIO(cam_group['frames'][:].tostring())
             img_buffer = [img for t, img in enumerate(imageio.get_reader(buf, format='mp4')) if start_time <= t < n_load + start_time]
+            try:
+                imageio._proc.kill()
+            except:
+                pass
         elif encoding == 'jpg':
             img_buffer = [cv2.imdecode(cam_group['frame{}'.format(t)][:], cv2.IMREAD_COLOR)
                                     for t in range(start_time, start_time + n_load)]

@@ -135,7 +135,7 @@ def get_metadata_frame(files):
         base_path = files
         files = sorted(glob.glob('{}/*.hdf5'.format(files)))
         if not files:
-            raise ValueError('no hdf5 files found!')
+            raise ValueError('no hdf5 files found at {}/*.hdf5'.format(base_path))
 
         if os.path.exists('{}/meta_data.pkl'.format(base_path)):
             meta_data = pd.read_pickle('{}/meta_data.pkl'.format(base_path), compression='gzip')
